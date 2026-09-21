@@ -101,14 +101,34 @@ each choice is recorded in [DECISIONS.md](DECISIONS.md).
 
 Invalid values fail at startup with a clear message rather than at first use.
 
+## Data and privacy
+
+The service is built for **aggregate** surveillance counts (a number per place
+per week). It has no fields for names, identifiers or any other patient-level
+data, and it must not be given any. No real field or patient data is used in
+development, tests or documentation. Small counts in small areas can still be
+identifying, so anyone deploying this on real data is responsible for suppression
+rules that fit their context. Details and limits are in [ETHICS.md](ETHICS.md).
+
+## Data provenance
+
+The repository contains no surveillance data. Tests use a few invented rows. The
+data sources planned for later phases are the public DHIS2 demo instance
+(demonstration data, not real surveillance data) and a seeded synthetic series
+generator. [DATA_PROVENANCE.md](DATA_PROVENANCE.md) documents each data source,
+its terms, and how results can be reproduced.
+
 ## Development
 
 You need JDK 25 and Docker. Maven is provided by the wrapper.
 
 ```bash
 git config core.hooksPath .githooks   # once per clone
-./mvnw verify                          # build and run all tests
+make verify                            # build and run all tests (./mvnw verify)
+make run                               # start the app and PostgreSQL
 ```
+
+Run `make help` for the other tasks.
 
 Tests run against a real PostgreSQL started by Testcontainers. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, commit conventions and
