@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: outbreak-signal-service
+  datasource:
+    # Defaults match docker-compose.yml and are for local development only.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/outbreaksignal}
+    username: ${DB_USERNAME:outbreak}
+    password: ${DB_PASSWORD:outbreak}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+
+outbreak:
+  sync:
+    window-weeks: 104
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

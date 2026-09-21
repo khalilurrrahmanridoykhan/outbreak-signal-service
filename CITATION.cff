@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "Outbreak Signal Service"
+abstract: >-
+  Spring Boot service that pulls weekly surveillance data from DHIS2, flags
+  statistical aberrations with EARS and CUSUM methods, and publishes the
+  resulting signals as a REST API, signed webhooks and FHIR DetectedIssue
+  resources. Signals are for human review, not confirmed outbreaks.
+authors:
+  - name: "Khalilur Rahman Ridoy"
+    alias: "khalilurrrahmanridoykhan"
+repository-code: "https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service"
+license: Apache-2.0
+type: software
+keywords:
+  - disease surveillance
+  - outbreak detection
+  - DHIS2
+  - FHIR
+  - Spring Boot
