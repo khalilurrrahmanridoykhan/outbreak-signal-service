@@ -34,7 +34,10 @@ public class Observation {
     @Column(nullable = false, precision = 14, scale = 4)
     private BigDecimal value;
 
-    @Column(name = "fetched_at", nullable = false, insertable = false, updatable = false)
+    // Written explicitly on both insert and update (see updateValue), not
+    // left to the column's DEFAULT now(), which only fires on insert and
+    // would go stale across a genuine upsert.
+    @Column(name = "fetched_at", nullable = false)
     private Instant fetchedAt;
 
     protected Observation() {
@@ -44,6 +47,13 @@ public class Observation {
         this.series = series;
         this.weekStart = weekStart;
         this.value = value;
+        this.fetchedAt = Instant.now();
+    }
+
+    /** Replaces the value, as a sync does when DHIS2 reports a new or corrected figure for a week already stored. */
+    public void updateValue(BigDecimal value) {
+        this.value = value;
+        this.fetchedAt = Instant.now();
     }
 
     public Long getId() {
