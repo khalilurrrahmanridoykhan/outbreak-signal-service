@@ -44,6 +44,18 @@ The value of a series for one ISO week.
 | `series_id` | bigint | The series the value belongs to (deleted with it) |
 | `week_start` | date | The **Monday** that starts the ISO week |
 | `value` | numeric(14,4), at least 0 | Reported count or indicator value |
-| `fetched_at` | timestamptz | When the row was stored |
+| `fetched_at` | timestamptz | When the row was last written (set on both insert and update; see `Observation.updateValue`) |
 
 Unique on (`series_id`, `week_start`). `week_start` must be a Monday.
+
+## `shedlock`
+
+Not application data — the lock ShedLock uses so the scheduled DHIS2 sync runs
+on only one instance at a time (`net.javacrumbs.shedlock`'s own schema).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | varchar(64), primary key | The lock's name (`dhis2-sync`) |
+| `lock_until` | timestamptz | When the lock expires if not released sooner |
+| `locked_at` | timestamptz | When the current holder acquired it |
+| `locked_by` | varchar(255) | Hostname of the instance holding it |

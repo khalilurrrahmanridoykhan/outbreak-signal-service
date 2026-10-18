@@ -17,13 +17,13 @@ publishes the resulting alerts as a REST API, signed webhooks, email and FHIR
 
 ## Status
 
-Under active development, built in seven phases. Only the foundation exists so
-far; everything below "Planned" is not implemented yet.
+Under active development, built in seven phases. Everything below "Planned"
+is not implemented yet.
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Scaffold, PostgreSQL schema, CI, repository standards | **Done** |
-| 2 | DHIS2 client and idempotent sync | Planned |
+| 2 | DHIS2 client and idempotent sync | **Done** |
 | 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | Planned |
 | 4 | Alerts API with lifecycle and JWT security | Planned |
 | 5 | Notifications: signed webhooks and email via a transactional outbox | Planned |
@@ -43,6 +43,13 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
 - RFC 9457 problem responses that never leak stack traces or SQL.
 - Health and readiness probes at `/actuator/health`.
 - Container image and a Compose stack.
+- A DHIS2 client (retry on 5xx/connection errors only, plus a circuit breaker)
+  that pulls weekly surveillance data into `observation`, idempotently — see
+  [docs/dhis2-spike.md](docs/dhis2-spike.md) for what that data actually looks
+  like on the public demo this defaults to.
+- A scheduled sync (daily by default, configurable) coordinated with ShedLock
+  so only one running instance ever syncs at a time, plus a manual
+  `POST /api/v1/sync` trigger.
 
 ## Quickstart
 
@@ -67,6 +74,20 @@ Stop it with `Ctrl+C`, and remove the database volume with
 The Compose file uses fixed local-development credentials. Do not reuse them
 anywhere real.
 
+By default, the app is configured to sync from the **public DHIS2 demo
+instance** (its own intentionally public `admin`/`district` login — see
+[docs/dhis2-spike.md](docs/dhis2-spike.md)), on a daily schedule. Trigger a
+sync immediately instead of waiting for it:
+
+```bash
+curl -X POST localhost:8080/api/v1/sync
+```
+
+The first run against the live demo takes roughly a minute (five data
+elements, over a hundred weeks each) and is unsecured for now — see
+[DECISIONS.md](DECISIONS.md) #8. Override every `outbreak.dhis2.*` setting
+with your own instance's details for anything beyond trying this out.
+
 ## Architecture (target)
 
 ```
@@ -87,8 +108,8 @@ DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
 REST /api/v1/**  (JWT, roles)        FHIR /fhir/DetectedIssue (read-only)
 ```
 
-Only the persistence layer in this diagram exists so far. The reasoning behind
-each choice is recorded in [DECISIONS.md](DECISIONS.md).
+`datasource` (DHIS2 in) and the persistence layer exist so far. The reasoning
+behind each choice is recorded in [DECISIONS.md](DECISIONS.md).
 
 ## Configuration
 
@@ -97,7 +118,15 @@ each choice is recorded in [DECISIONS.md](DECISIONS.md).
 | `spring.datasource.url` | `DB_URL` | `jdbc:postgresql://localhost:5432/outbreaksignal` | JDBC URL |
 | `spring.datasource.username` | `DB_USERNAME` | `outbreak` | Database user |
 | `spring.datasource.password` | `DB_PASSWORD` | `outbreak` (local only) | Database password |
-| `outbreak.sync.window-weeks` | `OUTBREAK_SYNC_WINDOWWEEKS` | `104` | Weeks of history kept in step with the source (8 to 520) |
+| `outbreak.sync.window-weeks` | `OUTBREAK_SYNC_WINDOW_WEEKS` | `104` | Weeks of history kept in step with the source (8 to 520) |
+| `outbreak.sync.cron` | `OUTBREAK_SYNC_CRON` | `0 0 3 * * *` (03:00 UTC daily) | When the scheduled sync runs |
+| `outbreak.dhis2.base-url` | `DHIS2_BASE_URL` | the public demo (see [docs/dhis2-spike.md](docs/dhis2-spike.md)) | DHIS2 instance base URL |
+| `outbreak.dhis2.username` / `.password` | `DHIS2_USERNAME` / `DHIS2_PASSWORD` | `admin` / `district` (the demo's own public login) | Basic-auth credentials |
+| `outbreak.dhis2.org-unit-level` | `DHIS2_ORG_UNIT_LEVEL` | `3` | Hierarchy level synced as this project's "org unit" (district, on the demo) |
+
+The data elements synced (`outbreak.dhis2.data-elements`) are a list in
+`application.yml`, not single environment variables; override the whole list
+in a deployment's own configuration file.
 
 Invalid values fail at startup with a clear message rather than at first use.
 
@@ -112,11 +141,10 @@ rules that fit their context. Details and limits are in [ETHICS.md](ETHICS.md).
 
 ## Data provenance
 
-The repository contains no surveillance data. Tests use a few invented rows. The
-data sources planned for later phases are the public DHIS2 demo instance
-(demonstration data, not real surveillance data) and a seeded synthetic series
-generator. [DATA_PROVENANCE.md](DATA_PROVENANCE.md) documents each data source,
-its terms, and how results can be reproduced.
+The repository itself contains no surveillance data; a running instance
+fetches it on demand from whichever DHIS2 is configured — the public demo by
+default — and never commits it. [DATA_PROVENANCE.md](DATA_PROVENANCE.md)
+documents each data source, its terms, and how results can be reproduced.
 
 ## Development
 
@@ -139,13 +167,15 @@ Colima notes.
 ```
 src/main/java/.../outbreaksignal
   ├── observation/   organisation units, series, observations, repositories
+  ├── datasource/    DhisClient/DhisWebClient, Dhis2SyncService, scheduling
   ├── config/        typed, validated application settings
-  └── common/        error model (RFC 9457)
+  └── common/        error model (RFC 9457), EpiWeek
 src/main/resources/db/migration   Flyway migrations
+docs/dhis2-spike.md                findings from the public DHIS2 demo
 ```
 
-More packages (`datasource`, `detection`, `alert`, `notification`, `fhir`,
-`security`) arrive with their phases.
+More packages (`detection`, `alert`, `notification`, `fhir`, `security`)
+arrive with their phases.
 
 ## Documentation
 
