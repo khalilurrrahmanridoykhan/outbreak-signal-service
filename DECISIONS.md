@@ -73,3 +73,41 @@ still caught.
 
 Third-party actions are referenced by full commit SHA with the version in a
 comment, and Dependabot keeps them current. A moved tag cannot change what runs.
+
+## 12. resilience4j and ShedLock are used as plain libraries, not autoconfigured
+
+`resilience4j-spring-boot3` targets Boot 3's autoconfigure package layout, which
+Boot 4 reorganised (see decision 1); rather than find out at some later phase
+whether its autoconfiguration still resolves, `DhisResilienceConfig` builds the
+`Retry` and `CircuitBreaker` beans by hand from the core `resilience4j-retry`
+and `resilience4j-circuitbreaker` modules. ShedLock was never a concern here —
+`shedlock-spring` is a plain `LockProvider` bean with no Boot-version-specific
+autoconfiguration at all.
+
+## 13. DHIS2 analytics columns are read by header name, not by position
+
+`AnalyticsResponse` looks up `dx`/`ou`/`pe`/`value` by the `headers` array DHIS2
+sends rather than assuming `[dx, ou, pe, value]` order. The spike's own queries
+always came back in that order, but nothing in the DHIS2 API contract promises
+it, and the cost of reading headers instead of hardcoding positions is one
+small lookup method.
+
+## 14. A decoding failure is not retried
+
+`DhisWebClient` retries `DhisServerException` (5xx, connection failure) but not
+a response-decoding failure. A malformed body from the same endpoint would very
+likely still be malformed on retry; that failure mode is closer to a 4xx (a
+request/response mismatch worth surfacing immediately) than to a transient
+network blip.
+
+## 15. A `@Component`'s default bean name can collide with a `@Bean` method name
+
+`DhisWebClient` (the `@Component` adapter) and a `@Bean WebClient dhisWebClient(...)`
+method in `DhisWebClientConfig` both wanted the bean name `dhisWebClient` —
+Spring derives a component's default name from its simple class name
+(`DhisWebClient` → `dhisWebClient`), and that collided with the `WebClient`
+factory method of the same name. It only surfaced as a context-load failure in
+`OutbreakSignalServiceApplicationTests`, not at compile time. Renamed the
+factory method to `dhisHttpClient`; the lesson generalises, so a `@Bean` method
+in this codebase is never named after an existing `@Component` class with the
+same simple name.
