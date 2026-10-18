@@ -111,3 +111,38 @@ factory method of the same name. It only surfaced as a context-load failure in
 factory method to `dhisHttpClient`; the lesson generalises, so a `@Bean` method
 in this codebase is never named after an existing `@Component` class with the
 same simple name.
+
+## 16. Synced org units are stored flat, with no parent link, for now
+
+The `org_unit` table's `parent_id` is a self-referential foreign key, but
+Phase 2 syncs only one configured hierarchy level (districts). Persisting a
+district's real DHIS2 parent (a region, one level up) would violate that
+foreign key, since the region is never synced as a row of its own. Rather than
+also sync every ancestor level just to make the column valid, `parent_id` is
+left `null` for every row Phase 2 creates; `DhisOrgUnit.parentUid()` is read
+from the API but intentionally not persisted yet. Revisit if a later phase
+needs to aggregate upward through the hierarchy.
+
+## 17. One data element's sync failure does not stop the others
+
+`Dhis2SyncService.sync()` catches `DhisClientException` per data element
+rather than letting it propagate and abort the whole run. The sync is
+idempotent (decision in the plan itself), so the next scheduled run simply
+retries whatever failed; getting four diseases' worth of data because the
+fifth's request failed is strictly better than getting none of the five over
+a transient problem with one.
+
+## 18. The DHIS2 demo's "fixed high-water mark" finding from the spike was wrong
+
+`docs/dhis2-spike.md` originally found (2026-09-21) that the demo's weekly
+data stopped advancing at a fixed week and would never move. Returning to
+build the sync a month later (2026-10-18), the real cutoff had moved forward
+by about eight months of ISO weeks — far more than the one month of real time
+that had passed — while the older data stayed in place. The spike document
+itself was corrected in place with a dated addendum rather than quietly
+edited, since the wrong version had already shaped real design decisions
+(notably the live test's assertions) worth knowing the history of. The
+practical lesson carries over unchanged either way: a sync must treat an
+empty or short recent window as normal, and a test must never assert
+freshness against "the newest week," regardless of which explanation (frozen
+seed, or bursty reseeding) turns out to be correct on any given day.

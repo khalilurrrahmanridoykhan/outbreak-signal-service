@@ -111,20 +111,41 @@ Two traps found by trying the obvious things first:
   range-globbing syntax, so any query built with DHIS2's `field[nested]`
   syntax needs `curl -g` or `--globoff`.)
 
-## 4. The data has a fixed high-water mark — read this before Phase 2 design
+## 4. The newest weeks are often empty — and the cutoff itself moves unpredictably
 
-This is the most important finding. Querying all 104 weeks up to the current
-server date (`2026-10-18`, ISO week 42) returns data for only **28 of those
-104 weeks**, and the most recent one with any value is **`2026W9`** — about 33
-weeks behind today, on every one of the five diseases, consistently. Data
-starts around `2025W1`. Re-running the same query later in this session
-produced the same cutoff.
+This is the most important finding, and it was **wrong in an important way the
+first time it was written** (2026-09-21); the correction below (2026-10-18)
+matters more than the original claim did.
 
-In other words: **this demo's weekly values are a fixed seed, not a live feed
-that advances with the calendar.** A sync job that asks "give me data for the
-last N weeks relative to right now" will, on this instance, keep finding
-nothing for every week after `2026W9`, indefinitely, through no fault of the
-sync logic.
+**Original finding (2026-09-21):** querying all 104 weeks up to that day's
+server date (ISO week 42 of 2025, in that session) returned data for only 28
+of those 104 weeks, with the most recent value on every disease landing at
+`2026W9` — about 33 weeks behind. Re-running the query later the same session
+produced the same cutoff, which read as a fixed seed that would never move.
+
+**Correction (2026-10-18, one month later):** building Phase 2 against the
+live instance now shows real values through **`2026-10-12`** — the Monday
+before this sync — on every one of the five diseases, not `2026W9`. The older
+data is still there too (earliest observed row is still `2024-12-30`); nothing
+was deleted, the window simply grew. So the demo's data **does** move forward
+over time, just not in lockstep with the calendar and not predictably: a month
+of real time passed between the two checks, and the cutoff advanced by about
+eight months of ISO weeks, not one month. Why is not known — a bigger reseed,
+analytics tables catching up after being behind, or something else about how
+the demo project maintains this instance. The login page's "reset every night"
+was true at face value; what resets, and how much new data appears on a given
+night, apparently is not constant.
+
+**What stays true despite the correction:** the newest week or two is still
+often incomplete at any given moment (coverage in the most recent rows was
+~85% at spike time and still well under 100% now — see the per-week counts in
+§5), and nothing about this API guarantees "the data is current as of today."
+A sync job must still treat an empty or short recent window as a normal
+outcome, not a bug — the reason has turned out to be "data arrives in bursts
+on a schedule outside this project's control" rather than "data is frozen
+forever," but the engineering response is the same either way: never assert
+freshness against a specific recent week in a test, and never alert on "no
+new data this week" as if it were an error.
 
 This directly shapes Phase 2:
 
@@ -148,16 +169,24 @@ This directly shapes Phase 2:
 - **The spike's own "no suitable weekly series" fallback does not trigger.**
   IDSR Weekly is real, weekly, and a direct match; Phase 2 is built against
   it, not against invented synthetic shapes alone.
-- **`outbreak.dhis2.base-url` should default to nothing** (fail closed) and be
-  set in the environment to the currently-resolved host documented in §1,
-  with a comment pointing at this file for why it occasionally needs updating.
+- **`outbreak.dhis2.base-url` defaults to the resolved demo host** documented
+  in §1 instead of failing closed (a deliberate deviation from this
+  document's original suggestion — see the plan's own progress log and
+  DECISIONS.md for why: it lets a fresh clone sync real data with no setup).
+  A comment at the setting points back here for why it occasionally needs
+  updating.
 - **Seed `org_unit` at level 3** (district), using the IDSR Weekly dataset's
-  own analytics output, not the facility list.
+  own analytics output, not the facility list. Confirmed working against the
+  live instance on 2026-10-18: 152 districts, ~2,390 observations synced per
+  disease.
 - **The period utility generates explicit ISO week strings for the whole sync
   window** rather than relying on a relative keyword, and must format week
   numbers without zero-padding to match DHIS2's own output.
 - **The opt-in `live` integration test** (excluded from CI, per the plan)
-  asserts against the known historical window above, not against "this week."
+  asserts against a window of history already confirmed present, never
+  against "this week" or "the newest data" — see §4's correction for why
+  that would be a test that could start failing for reasons having nothing
+  to do with a bug.
 - WireMock fixtures for the main test suite are recorded from real response
   shapes seen above (including a captured 104-week response), so the suite
   stays representative without depending on the demo being reachable or
