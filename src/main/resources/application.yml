@@ -19,6 +19,12 @@ spring:
 outbreak:
   sync:
     window-weeks: ${OUTBREAK_SYNC_WINDOW_WEEKS:104}
+    # Cron expression for the scheduled sync; read directly from the
+    # environment by @Scheduled, not through OutbreakProperties, so it must
+    # be set here explicitly (OutbreakProperties.Sync's own @DefaultValue
+    # only applies when something binds that record, which @Scheduled's
+    # placeholder resolution does not).
+    cron: ${OUTBREAK_SYNC_CRON:0 0 3 * * *}
   dhis2:
     # Defaults point at the public DHIS2 demo instance (read-only, public
     # admin/district credentials) so a fresh clone can sync real data with no

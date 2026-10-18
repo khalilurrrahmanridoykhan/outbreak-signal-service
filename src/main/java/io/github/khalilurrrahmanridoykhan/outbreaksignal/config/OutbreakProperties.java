@@ -19,8 +19,12 @@ public record OutbreakProperties(@Valid @DefaultValue Sync sync, @Valid Dhis2 dh
      * Settings for pulling data from the source system.
      *
      * @param windowWeeks how many weeks of history each sync keeps in step with the source
+     * @param cron when the scheduled sync runs (default: 03:00 UTC daily, a time no
+     *     surveillance system's own reporting deadline is likely to land on)
      */
-    public record Sync(@DefaultValue("104") @Min(8) @Max(520) int windowWeeks) {
+    public record Sync(
+            @DefaultValue("104") @Min(8) @Max(520) int windowWeeks,
+            @DefaultValue("0 0 3 * * *") @NotBlank String cron) {
     }
 
     /**
