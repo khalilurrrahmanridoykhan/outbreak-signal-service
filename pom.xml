@@ -39,6 +39,32 @@
     <shedlock.version>7.10.1</shedlock.version>
     <wiremock.version>3.13.2</wiremock.version>
   </properties>
+  <dependencyManagement>
+    <dependencies>
+      <!-- wiremock and wiremock-jetty12 (3.13.2) each bring a different Jetty
+           12 minor line transitively (core at 12.1.12, the ee10 modules at
+           12.0.30), which are not binary-compatible with each other. Importing
+           the BOM pins every Jetty artifact, from whichever module introduces
+           it, to the one version actually used here. -->
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-bom</artifactId>
+        <version>12.1.12</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- jetty-bom does not cover the ee10 (servlet/webapp) modules; they
+           have their own BOM. -->
+      <dependency>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-bom</artifactId>
+        <version>12.1.12</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -117,6 +143,39 @@
     <dependency>
       <groupId>org.wiremock</groupId>
       <artifactId>wiremock</artifactId>
+      <version>${wiremock.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- wiremock 3.13.2's own POM pulls these at Jetty 11.0.26 alongside
+             Jetty 12.1.12 elsewhere in the same tree (for its optional
+             browser-proxy/record-playback mode, which these tests do not
+             use); the mixed major versions crash the embedded server at
+             startup with a mismatched WriteFlusher$Listener class. Excluded
+             rather than forced to one version, since forcing would just
+             shift the mismatch onto whichever side keeps the other version. -->
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-servlet</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-servlets</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-webapp</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty.http2</groupId>
+          <artifactId>http2-server</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- wiremock's core artifact ships with no embedded HTTP server; this
+         supplies the Jetty 12 one. -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-jetty12</artifactId>
       <version>${wiremock.version}</version>
       <scope>test</scope>
     </dependency>
