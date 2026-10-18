@@ -34,6 +34,10 @@
   </scm>
   <properties>
     <java.version>25</java.version>
+    <!-- Not managed by spring-boot-starter-parent; kept in step together. -->
+    <resilience4j.version>2.4.0</resilience4j.version>
+    <shedlock.version>7.10.1</shedlock.version>
+    <wiremock.version>3.13.2</wiremock.version>
   </properties>
   <dependencies>
     <dependency>
@@ -61,6 +65,45 @@
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
 
+    <!-- WebClient, used synchronously (.block()), to match the rest of this
+         project's blocking style; no reactive web server is started. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor.netty</groupId>
+      <artifactId>reactor-netty-http</artifactId>
+    </dependency>
+
+    <!-- Core resilience4j modules only (no resilience4j-spring-boot3 starter):
+         that starter targets Boot 3's autoconfigure package layout, which
+         Boot 4 reorganised, so retry/circuit-breaker are wired by hand in
+         ResilienceConfig instead of relying on its autoconfiguration. -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-retry</artifactId>
+      <version>${resilience4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-circuitbreaker</artifactId>
+      <version>${resilience4j.version}</version>
+    </dependency>
+
+    <!-- ShedLock: a plain LockProvider bean, no Boot-version-specific
+         autoconfiguration, so no compatibility risk from the Boot 4 move. -->
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-spring</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-provider-jdbc-template</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
@@ -69,6 +112,12 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <version>${wiremock.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -113,6 +162,15 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Tests tagged "live" call the real public DHIS2 demo and are
+               opt-in only: run them with `-Dgroups=live`. -->
+          <excludedGroups>live</excludedGroups>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
