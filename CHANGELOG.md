@@ -19,3 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Continuous integration: build and tests, container smoke test, CodeQL,
   dependency review, and a commit-message check.
 - Community and governance files, issue forms and a pull request template.
+- `EpiWeek`: parses and formats DHIS2 weekly period strings and maps them to
+  the Monday that starts each ISO week.
+- `DhisClient`/`DhisWebClient`: a DHIS2 Web API client with retry (5xx and
+  connection errors only) and a circuit breaker, backed by resilience4j's
+  core modules.
+- `Dhis2SyncService`: pulls the configured DHIS2 data elements into
+  `observation`, idempotently — running it repeatedly with unchanged source
+  data leaves the database unchanged, and a corrected value from DHIS2
+  overwrites the existing row instead of duplicating it.
+- A scheduled sync (`@Scheduled` + ShedLock), configurable by cron expression,
+  and a manual `POST /api/v1/sync` trigger.
+- `docs/dhis2-spike.md`: findings from the public DHIS2 demo instance that
+  shaped this client (district-level org units, explicit weekly period lists,
+  and why recent weeks are often empty).

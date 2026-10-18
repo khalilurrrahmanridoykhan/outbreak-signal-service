@@ -73,3 +73,76 @@ still caught.
 
 Third-party actions are referenced by full commit SHA with the version in a
 comment, and Dependabot keeps them current. A moved tag cannot change what runs.
+
+## 12. resilience4j and ShedLock are used as plain libraries, not autoconfigured
+
+`resilience4j-spring-boot3` targets Boot 3's autoconfigure package layout, which
+Boot 4 reorganised (see decision 1); rather than find out at some later phase
+whether its autoconfiguration still resolves, `DhisResilienceConfig` builds the
+`Retry` and `CircuitBreaker` beans by hand from the core `resilience4j-retry`
+and `resilience4j-circuitbreaker` modules. ShedLock was never a concern here —
+`shedlock-spring` is a plain `LockProvider` bean with no Boot-version-specific
+autoconfiguration at all.
+
+## 13. DHIS2 analytics columns are read by header name, not by position
+
+`AnalyticsResponse` looks up `dx`/`ou`/`pe`/`value` by the `headers` array DHIS2
+sends rather than assuming `[dx, ou, pe, value]` order. The spike's own queries
+always came back in that order, but nothing in the DHIS2 API contract promises
+it, and the cost of reading headers instead of hardcoding positions is one
+small lookup method.
+
+## 14. A decoding failure is not retried
+
+`DhisWebClient` retries `DhisServerException` (5xx, connection failure) but not
+a response-decoding failure. A malformed body from the same endpoint would very
+likely still be malformed on retry; that failure mode is closer to a 4xx (a
+request/response mismatch worth surfacing immediately) than to a transient
+network blip.
+
+## 15. A `@Component`'s default bean name can collide with a `@Bean` method name
+
+`DhisWebClient` (the `@Component` adapter) and a `@Bean WebClient dhisWebClient(...)`
+method in `DhisWebClientConfig` both wanted the bean name `dhisWebClient` —
+Spring derives a component's default name from its simple class name
+(`DhisWebClient` → `dhisWebClient`), and that collided with the `WebClient`
+factory method of the same name. It only surfaced as a context-load failure in
+`OutbreakSignalServiceApplicationTests`, not at compile time. Renamed the
+factory method to `dhisHttpClient`; the lesson generalises, so a `@Bean` method
+in this codebase is never named after an existing `@Component` class with the
+same simple name.
+
+## 16. Synced org units are stored flat, with no parent link, for now
+
+The `org_unit` table's `parent_id` is a self-referential foreign key, but
+Phase 2 syncs only one configured hierarchy level (districts). Persisting a
+district's real DHIS2 parent (a region, one level up) would violate that
+foreign key, since the region is never synced as a row of its own. Rather than
+also sync every ancestor level just to make the column valid, `parent_id` is
+left `null` for every row Phase 2 creates; `DhisOrgUnit.parentUid()` is read
+from the API but intentionally not persisted yet. Revisit if a later phase
+needs to aggregate upward through the hierarchy.
+
+## 17. One data element's sync failure does not stop the others
+
+`Dhis2SyncService.sync()` catches `DhisClientException` per data element
+rather than letting it propagate and abort the whole run. The sync is
+idempotent (decision in the plan itself), so the next scheduled run simply
+retries whatever failed; getting four diseases' worth of data because the
+fifth's request failed is strictly better than getting none of the five over
+a transient problem with one.
+
+## 18. The DHIS2 demo's "fixed high-water mark" finding from the spike was wrong
+
+`docs/dhis2-spike.md` originally found (2026-09-21) that the demo's weekly
+data stopped advancing at a fixed week and would never move. Returning to
+build the sync a month later (2026-10-18), the real cutoff had moved forward
+by about eight months of ISO weeks — far more than the one month of real time
+that had passed — while the older data stayed in place. The spike document
+itself was corrected in place with a dated addendum rather than quietly
+edited, since the wrong version had already shaped real design decisions
+(notably the live test's assertions) worth knowing the history of. The
+practical lesson carries over unchanged either way: a sync must treat an
+empty or short recent window as normal, and a test must never assert
+freshness against "the newest week," regardless of which explanation (frozen
+seed, or bursty reseeding) turns out to be correct on any given day.

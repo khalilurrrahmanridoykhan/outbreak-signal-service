@@ -34,7 +34,40 @@
   </scm>
   <properties>
     <java.version>25</java.version>
+    <!-- Not managed by spring-boot-starter-parent; kept in step together. -->
+    <resilience4j.version>2.4.0</resilience4j.version>
+    <shedlock.version>7.10.1</shedlock.version>
+    <wiremock.version>3.13.2</wiremock.version>
+    <!-- Default test exclusion; override to run the opt-in "live" tests:
+         ./mvnw test -DexcludedGroups= -Dgroups=live -->
+    <excludedGroups>live</excludedGroups>
   </properties>
+  <dependencyManagement>
+    <dependencies>
+      <!-- wiremock and wiremock-jetty12 (3.13.2) each bring a different Jetty
+           12 minor line transitively (core at 12.1.12, the ee10 modules at
+           12.0.30), which are not binary-compatible with each other. Importing
+           the BOM pins every Jetty artifact, from whichever module introduces
+           it, to the one version actually used here. -->
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-bom</artifactId>
+        <version>12.1.12</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- jetty-bom does not cover the ee10 (servlet/webapp) modules; they
+           have their own BOM. -->
+      <dependency>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-bom</artifactId>
+        <version>12.1.12</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -61,6 +94,45 @@
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
 
+    <!-- WebClient, used synchronously (.block()), to match the rest of this
+         project's blocking style; no reactive web server is started. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor.netty</groupId>
+      <artifactId>reactor-netty-http</artifactId>
+    </dependency>
+
+    <!-- Core resilience4j modules only (no resilience4j-spring-boot3 starter):
+         that starter targets Boot 3's autoconfigure package layout, which
+         Boot 4 reorganised, so retry/circuit-breaker are wired by hand in
+         ResilienceConfig instead of relying on its autoconfiguration. -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-retry</artifactId>
+      <version>${resilience4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-circuitbreaker</artifactId>
+      <version>${resilience4j.version}</version>
+    </dependency>
+
+    <!-- ShedLock: a plain LockProvider bean, no Boot-version-specific
+         autoconfiguration, so no compatibility risk from the Boot 4 move. -->
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-spring</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-provider-jdbc-template</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
@@ -69,6 +141,45 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <version>${wiremock.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- wiremock 3.13.2's own POM pulls these at Jetty 11.0.26 alongside
+             Jetty 12.1.12 elsewhere in the same tree (for its optional
+             browser-proxy/record-playback mode, which these tests do not
+             use); the mixed major versions crash the embedded server at
+             startup with a mismatched WriteFlusher$Listener class. Excluded
+             rather than forced to one version, since forcing would just
+             shift the mismatch onto whichever side keeps the other version. -->
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-servlet</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-servlets</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-webapp</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.eclipse.jetty.http2</groupId>
+          <artifactId>http2-server</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- wiremock's core artifact ships with no embedded HTTP server; this
+         supplies the Jetty 12 one. -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-jetty12</artifactId>
+      <version>${wiremock.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -113,6 +224,16 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Tests tagged "live" call the real public DHIS2 demo and are
+               opt-in only: run them with
+               `./mvnw test -DexcludedGroups= -Dgroups=live`. -->
+          <excludedGroups>${excludedGroups}</excludedGroups>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

@@ -18,7 +18,35 @@ spring:
 
 outbreak:
   sync:
-    window-weeks: 104
+    window-weeks: ${OUTBREAK_SYNC_WINDOW_WEEKS:104}
+    # Cron expression for the scheduled sync; read directly from the
+    # environment by @Scheduled, not through OutbreakProperties, so it must
+    # be set here explicitly (OutbreakProperties.Sync's own @DefaultValue
+    # only applies when something binds that record, which @Scheduled's
+    # placeholder resolution does not).
+    cron: ${OUTBREAK_SYNC_CRON:0 0 3 * * *}
+  dhis2:
+    # Defaults point at the public DHIS2 demo instance (read-only, public
+    # admin/district credentials) so a fresh clone can sync real data with no
+    # setup. The base URL is the host that the play.dhis2.org/40 alias
+    # resolved to as of the spike in docs/dhis2-spike.md, and will need
+    # updating when that demo moves to its next patch version. None of this
+    # is appropriate for a real deployment; override every one of these.
+    base-url: ${DHIS2_BASE_URL:https://play.im.dhis2.org/stable-2-40-12}
+    username: ${DHIS2_USERNAME:admin}
+    password: ${DHIS2_PASSWORD:district}
+    org-unit-level: ${DHIS2_ORG_UNIT_LEVEL:3}
+    data-elements:
+      - uid: UsSUX0cpKsH
+        name: IDSR Cholera
+      - uid: vq2qO3eTrNi
+        name: IDSR Malaria
+      - uid: YazgqXbizv1
+        name: IDSR Measles
+      - uid: HS9zqaBdOQ4
+        name: IDSR Plague
+      - uid: noIzB569hTM
+        name: IDSR Yellow fever
 
 management:
   endpoints:
