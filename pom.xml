@@ -38,6 +38,9 @@
     <resilience4j.version>2.4.0</resilience4j.version>
     <shedlock.version>7.10.1</shedlock.version>
     <wiremock.version>3.13.2</wiremock.version>
+    <!-- Default test exclusion; override to run the opt-in "live" tests:
+         ./mvnw test -DexcludedGroups= -Dgroups=live -->
+    <excludedGroups>live</excludedGroups>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -227,8 +230,9 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <!-- Tests tagged "live" call the real public DHIS2 demo and are
-               opt-in only: run them with `-Dgroups=live`. -->
-          <excludedGroups>live</excludedGroups>
+               opt-in only: run them with
+               `./mvnw test -DexcludedGroups= -Dgroups=live`. -->
+          <excludedGroups>${excludedGroups}</excludedGroups>
         </configuration>
       </plugin>
       <plugin>
