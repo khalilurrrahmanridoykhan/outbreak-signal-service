@@ -13,13 +13,13 @@ import java.util.Map;
  * CUSUM its sensitivity to a small sustained shift that no single week's
  * z-score would cross a threshold on its own.
  */
-class CusumStrategy implements DetectionStrategy {
+public class CusumStrategy implements DetectionStrategy {
 
     private final int baselineWeeks;
     private final double referenceKSigma;
     private final double thresholdHSigma;
 
-    CusumStrategy(OutbreakProperties.Detection.Cusum config) {
+    public CusumStrategy(OutbreakProperties.Detection.Cusum config) {
         this.baselineWeeks = config.baselineWeeks();
         this.referenceKSigma = config.referenceKSigma();
         this.thresholdHSigma = config.thresholdHSigma();

@@ -15,7 +15,7 @@ import java.util.Map;
  * repeating its guard-band arithmetic; C2's own alarm decision is not used
  * here, only the raw statistic.
  */
-class EarsC3Strategy implements DetectionStrategy {
+public class EarsC3Strategy implements DetectionStrategy {
 
     private static final int WINDOW = 3;
     private static final double EXCESS_FLOOR = 1.0;
@@ -23,7 +23,7 @@ class EarsC3Strategy implements DetectionStrategy {
     private final EarsC2Strategy ears2;
     private final double threshold;
 
-    EarsC3Strategy(EarsC2Strategy ears2, OutbreakProperties.Detection.Ears config) {
+    public EarsC3Strategy(EarsC2Strategy ears2, OutbreakProperties.Detection.Ears config) {
         this.ears2 = ears2;
         this.threshold = config.threshold();
     }

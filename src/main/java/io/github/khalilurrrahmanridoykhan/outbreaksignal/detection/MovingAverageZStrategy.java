@@ -10,12 +10,12 @@ import java.util.Map;
  * flag a week whose value is more than {@code thresholdK} standard
  * deviations above the mean of the {@code baselineWeeks} weeks before it.
  */
-class MovingAverageZStrategy implements DetectionStrategy {
+public class MovingAverageZStrategy implements DetectionStrategy {
 
     private final int baselineWeeks;
     private final double thresholdK;
 
-    MovingAverageZStrategy(OutbreakProperties.Detection.MovingAverage config) {
+    public MovingAverageZStrategy(OutbreakProperties.Detection.MovingAverage config) {
         this.baselineWeeks = config.baselineWeeks();
         this.thresholdK = config.thresholdK();
     }

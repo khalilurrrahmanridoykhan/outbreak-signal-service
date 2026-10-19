@@ -14,14 +14,14 @@ import java.util.Map;
  * <p>{@link EarsC3Strategy} reuses this class directly for its own raw
  * z-scores rather than duplicating the guard-band arithmetic.
  */
-class EarsC2Strategy implements DetectionStrategy {
+public class EarsC2Strategy implements DetectionStrategy {
 
     static final int GUARD_WEEKS = 2;
 
     private final int baselineWeeks;
     private final double threshold;
 
-    EarsC2Strategy(OutbreakProperties.Detection.Ears config) {
+    public EarsC2Strategy(OutbreakProperties.Detection.Ears config) {
         this.baselineWeeks = config.baselineWeeks();
         this.threshold = config.threshold();
     }

@@ -11,12 +11,12 @@ import java.util.Map;
  * rises; also the most easily contaminated if an outbreak has already begun
  * ramping up during those 7 weeks — that is what C2 guards against.
  */
-class EarsC1Strategy implements DetectionStrategy {
+public class EarsC1Strategy implements DetectionStrategy {
 
     private final int baselineWeeks;
     private final double threshold;
 
-    EarsC1Strategy(OutbreakProperties.Detection.Ears config) {
+    public EarsC1Strategy(OutbreakProperties.Detection.Ears config) {
         this.baselineWeeks = config.baselineWeeks();
         this.threshold = config.threshold();
     }
