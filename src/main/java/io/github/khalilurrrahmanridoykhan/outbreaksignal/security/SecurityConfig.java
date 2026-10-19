@@ -35,7 +35,12 @@ public class SecurityConfig {
                         .decoder(jwtDecoder)
                         .jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 // A stateless JSON API with no cookie-based session has nothing for
-                // CSRF to protect; every write is authenticated by its bearer token.
+                // CSRF to protect: a browser never attaches a bearer token to a
+                // cross-site request the way it does a cookie, so there is no
+                // ambient credential for CSRF to ride on. CodeQL's generic rule
+                // flags any disabled CSRF protection regardless of this context;
+                // see Spring Security's own reference docs on stateless APIs.
+                // codeql[java/spring-disabled-csrf-protection]
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         return http.build();

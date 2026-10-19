@@ -336,3 +336,19 @@ nor from anything in this project's own code:
   401 regardless of the token, which looks like a validation failure but was
   really a DNS one. `docker-compose.yml`'s `app` service now sets the
   internal URI explicitly; see `docs/keycloak.md` for both.
+
+## 32. CSRF protection is deliberately disabled, and CodeQL's flag for that is a false positive here
+
+`SecurityConfig` disables CSRF (`java/spring-disabled-csrf-protection`,
+CodeQL's generic rule, flagged this as a high-severity finding on the PR).
+CSRF attacks work by riding an *ambient* credential a browser attaches
+automatically to a cross-site request — a cookie. This API has no
+cookie-based session at all (`SessionCreationPolicy.STATELESS`); every
+request carries its own bearer token in an `Authorization` header, which a
+browser never attaches to a cross-origin request on its own. There is
+nothing for CSRF to exploit, which is exactly the case Spring Security's own
+reference documentation names as the right time to disable it. Suppressed
+with an inline `codeql[java/spring-disabled-csrf-protection]` comment and the
+corresponding alert dismissed as a false positive, both with this same
+reasoning, rather than either leaving the PR blocked or "fixing" it by adding
+CSRF protection a stateless bearer-token API gets no benefit from.
