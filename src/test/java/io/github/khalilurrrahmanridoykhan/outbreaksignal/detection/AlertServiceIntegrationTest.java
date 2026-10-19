@@ -11,12 +11,14 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepos
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 /**
@@ -73,17 +75,17 @@ class AlertServiceIntegrationTest {
     @Test
     void acknowledgeThenResolveWritesOneEventPerMoveAndEndsResolved() {
         alertService.acknowledge(openAlert.getId(), ANALYST);
-        Alert resolved = alertService.resolve(openAlert.getId(), ANALYST);
+        AlertSummary resolved = alertService.resolve(openAlert.getId(), ANALYST);
 
-        assertThat(resolved.getStatus()).isEqualTo(AlertStatus.RESOLVED);
+        assertThat(resolved.status()).isEqualTo(AlertStatus.RESOLVED);
 
-        var history = alertService.history(openAlert.getId());
+        List<AlertEventSummary> history = alertService.getDetail(openAlert.getId()).history();
         assertThat(history).hasSize(2);
-        assertThat(history.get(0).getFromStatus()).isEqualTo(AlertStatus.OPEN);
-        assertThat(history.get(0).getToStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
-        assertThat(history.get(1).getFromStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
-        assertThat(history.get(1).getToStatus()).isEqualTo(AlertStatus.RESOLVED);
-        assertThat(history).allSatisfy(event -> assertThat(event.getActor()).isEqualTo(ANALYST));
+        assertThat(history.get(0).fromStatus()).isEqualTo(AlertStatus.OPEN);
+        assertThat(history.get(0).toStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
+        assertThat(history.get(1).fromStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
+        assertThat(history.get(1).toStatus()).isEqualTo(AlertStatus.RESOLVED);
+        assertThat(history).allSatisfy(event -> assertThat(event.actor()).isEqualTo(ANALYST));
     }
 
     @Test
@@ -91,8 +93,9 @@ class AlertServiceIntegrationTest {
         assertThatThrownBy(() -> alertService.resolve(openAlert.getId(), ANALYST))
                 .isInstanceOf(IllegalAlertTransitionException.class);
 
-        assertThat(alertService.get(openAlert.getId()).getStatus()).isEqualTo(AlertStatus.OPEN);
-        assertThat(alertService.history(openAlert.getId())).isEmpty();
+        AlertDetail detail = alertService.getDetail(openAlert.getId());
+        assertThat(detail.alert().status()).isEqualTo(AlertStatus.OPEN);
+        assertThat(detail.history()).isEmpty();
     }
 
     @Test
@@ -102,16 +105,16 @@ class AlertServiceIntegrationTest {
         assertThatThrownBy(() -> alertService.dismiss(openAlert.getId(), null, ANALYST))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        assertThat(alertService.get(openAlert.getId()).getStatus()).isEqualTo(AlertStatus.OPEN);
+        assertThat(alertService.getDetail(openAlert.getId()).alert().status()).isEqualTo(AlertStatus.OPEN);
     }
 
     @Test
     void dismissingWithAReasonRecordsThatReasonOnTheEvent() {
         alertService.dismiss(openAlert.getId(), "Reviewed: reporting delay, not a real rise", ANALYST);
 
-        var history = alertService.history(openAlert.getId());
+        List<AlertEventSummary> history = alertService.getDetail(openAlert.getId()).history();
         assertThat(history).singleElement().satisfies(event ->
-                assertThat(event.getNote()).isEqualTo("Reviewed: reporting delay, not a real rise"));
+                assertThat(event.note()).isEqualTo("Reviewed: reporting delay, not a real rise"));
     }
 
     @Test
@@ -126,6 +129,25 @@ class AlertServiceIntegrationTest {
         assertThatThrownBy(() -> alerts.saveAndFlush(secondLoadedCopy))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
 
-        assertThat(alertService.get(openAlert.getId()).getStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
+        assertThat(alertService.getDetail(openAlert.getId()).alert().status()).isEqualTo(AlertStatus.ACKNOWLEDGED);
+    }
+
+    /**
+     * Regression test for a real bug this phase's live verification caught:
+     * {@code AlertSummary.from} reads {@code Series}/{@code OrgUnit}, both
+     * lazy associations; mapping them outside the loading transaction threw
+     * {@code LazyInitializationException} on every real (non-mocked) alert,
+     * never on a WebMvcTest's hand-built one — see DECISIONS.md.
+     */
+    @Test
+    void searchAndDetailResolveTheLazyOrgUnitAndSeriesNamesWithoutError() {
+        AlertSummary fromSearch = alertService.search(null, null, null, null, null, Pageable.unpaged())
+                .getContent().getFirst();
+        assertThat(fromSearch.orgUnitName()).isEqualTo("Kpanga Kabonde");
+        assertThat(fromSearch.dataElementName()).isEqualTo("IDSR Malaria");
+
+        AlertSummary fromDetail = alertService.getDetail(openAlert.getId()).alert();
+        assertThat(fromDetail.orgUnitName()).isEqualTo("Kpanga Kabonde");
+        assertThat(fromDetail.dataElementName()).isEqualTo("IDSR Malaria");
     }
 }

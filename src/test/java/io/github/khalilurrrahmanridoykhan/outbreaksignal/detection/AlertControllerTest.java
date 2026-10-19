@@ -69,7 +69,7 @@ class AlertControllerTest {
 
     @Test
     void anAnalystCanAcknowledgeAndTheJwtSubjectBecomesTheActor() throws Exception {
-        when(alertService.acknowledge(eq(1L), anyString())).thenReturn(sampleAlert());
+        when(alertService.acknowledge(eq(1L), anyString())).thenReturn(sampleAlertSummary());
 
         mvc.perform(post("/api/v1/alerts/1/acknowledge")
                         .with(jwt().authorities(authority("ANALYST")).jwt(builder -> builder.subject("analyst1"))))
@@ -79,7 +79,7 @@ class AlertControllerTest {
 
     @Test
     void anAdminCanAlsoAcknowledge() throws Exception {
-        when(alertService.acknowledge(eq(1L), anyString())).thenReturn(sampleAlert());
+        when(alertService.acknowledge(eq(1L), anyString())).thenReturn(sampleAlertSummary());
 
         mvc.perform(post("/api/v1/alerts/1/acknowledge").with(jwt().authorities(authority("ADMIN"))))
                 .andExpect(status().isOk());
@@ -107,7 +107,7 @@ class AlertControllerTest {
 
     @Test
     void anUnknownAlertIsNotFound() throws Exception {
-        when(alertService.get(99L)).thenThrow(new AlertNotFoundException(99L));
+        when(alertService.getDetail(99L)).thenThrow(new AlertNotFoundException(99L));
 
         mvc.perform(get("/api/v1/alerts/99").with(jwt().authorities(authority("VIEWER"))))
                 .andExpect(status().isNotFound());
@@ -117,14 +117,14 @@ class AlertControllerTest {
         return new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role);
     }
 
-    private static Alert sampleAlert() {
+    private static AlertSummary sampleAlertSummary() {
         OrgUnit orgUnit = new OrgUnit("QwMiPiME3bA", "Kpanga Kabonde", 3, null);
         Series series = new Series(orgUnit, "vq2qO3eTrNi", "IDSR Malaria");
         DetectionRun run = new DetectionRun("EARS_C1", "{}", 104, Instant.now());
         Alert alert = new Alert(series, MONDAY, "EARS_C1", new BigDecimal("9.5"), new BigDecimal("3.0"),
                 Severity.HIGH, run, Instant.now());
         alert.transitionTo(AlertStatus.ACKNOWLEDGED);
-        return alert;
+        return AlertSummary.from(alert);
     }
 
     @org.springframework.boot.test.context.TestConfiguration
