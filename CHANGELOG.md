@@ -33,3 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/dhis2-spike.md`: findings from the public DHIS2 demo instance that
   shaped this client (district-level org units, explicit weekly period lists,
   and why recent weeks are often empty).
+- Five aberration-detection strategies, each hand-verified against
+  independently computed fixtures: moving-average z-score, CDC EARS C1/C2/C3,
+  and a one-sided CUSUM.
+- `DetectionService`: runs every strategy over every series' whole history
+  and creates an alert for each alarmed week, idempotently — a re-run over
+  unchanged observations creates no new alerts and never touches an existing
+  one. Runs as the second step of the scheduled sync.
+- `detection_run` and `alert` tables, and a `PackageDependencyTest` that
+  enforces detection staying independent of how the data it scores arrived.
+- A synthetic-outbreak backtest (`BacktestTest`) measuring sensitivity,
+  false-alarm rate and detection delay for every strategy against a fixed
+  seed; results in `RESULTS.md`.

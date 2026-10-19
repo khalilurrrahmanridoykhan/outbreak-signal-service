@@ -1,6 +1,7 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -13,7 +14,8 @@ import org.springframework.validation.annotation.Validated;
 /** Application settings under the {@code outbreak.*} prefix, validated at startup. */
 @Validated
 @ConfigurationProperties(prefix = "outbreak")
-public record OutbreakProperties(@Valid @DefaultValue Sync sync, @Valid Dhis2 dhis2) {
+public record OutbreakProperties(
+        @Valid @DefaultValue Sync sync, @Valid Dhis2 dhis2, @Valid @DefaultValue Detection detection) {
 
     /**
      * Settings for pulling data from the source system.
@@ -53,6 +55,62 @@ public record OutbreakProperties(@Valid @DefaultValue Sync sync, @Valid Dhis2 dh
             @NotEmpty List<@Valid DataElement> dataElements) {
 
         public record DataElement(@NotBlank String uid, @NotBlank String name) {
+        }
+    }
+
+    /**
+     * Parameters for the detection strategies. Each strategy's own parameters are
+     * recorded on {@code detection_run} for every run, so an alert is always
+     * reproducible from what is in this file plus the data it saw.
+     */
+    public record Detection(
+            @Valid @DefaultValue MovingAverage movingAverage,
+            @Valid @DefaultValue Ears ears,
+            @Valid @DefaultValue Cusum cusum) {
+
+        /**
+         * @param baselineWeeks how many preceding weeks the mean and standard
+         *     deviation are computed from
+         * @param thresholdK how many standard deviations above the mean counts as
+         *     an alert
+         */
+        public record MovingAverage(
+                @DefaultValue("12") @Min(4) @Max(104) int baselineWeeks,
+                @DefaultValue("3.0") @DecimalMin("0.5") double thresholdK) {
+        }
+
+        /**
+         * Shared by C1, C2 and C3: the classic CDC EARS baseline of 7 preceding
+         * weeks and a one-sided threshold of 3 standard deviations. C2 adds a
+         * 2-week guard band before the baseline (fixed, not configurable, since
+         * it is part of what distinguishes C2 from C1 rather than a tuning knob).
+         *
+         * @param baselineWeeks how many preceding weeks form the baseline
+         * @param threshold how many standard deviations above the mean counts as
+         *     an alert (also C3's cumulative-sum threshold)
+         */
+        public record Ears(
+                @DefaultValue("7") @Min(3) @Max(52) int baselineWeeks,
+                @DefaultValue("3.0") @DecimalMin("0.5") double threshold) {
+        }
+
+        /**
+         * A one-sided CUSUM. The reference value and decision interval are
+         * expressed in multiples of the baseline standard deviation, the usual
+         * way to state them so they scale with the series.
+         *
+         * @param baselineWeeks how many of the series' earliest weeks establish
+         *     the reference mean and standard deviation (the "in-control"
+         *     period); the statistic is then accumulated over every week after it
+         * @param referenceKSigma the allowed slack before a week contributes to
+         *     the cumulative sum, in standard deviations
+         * @param thresholdHSigma the cumulative sum level that triggers an alert,
+         *     in standard deviations
+         */
+        public record Cusum(
+                @DefaultValue("8") @Min(4) @Max(52) int baselineWeeks,
+                @DefaultValue("0.5") @DecimalMin("0.0") double referenceKSigma,
+                @DefaultValue("5.0") @DecimalMin("0.5") double thresholdHSigma) {
         }
     }
 }

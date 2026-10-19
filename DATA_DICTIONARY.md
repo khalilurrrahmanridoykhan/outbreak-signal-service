@@ -48,6 +48,47 @@ The value of a series for one ISO week.
 
 Unique on (`series_id`, `week_start`). `week_start` must be a Monday.
 
+## `detection_run`
+
+One strategy's execution over every series, for one scheduled or manual
+detection cycle. Not referenced by anything except `alert`; exists so every
+alert is reproducible from what ran, with what parameters, over how much
+history.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | bigint, generated | Internal identifier |
+| `algorithm` | varchar(32) | Which strategy ran (`EARS_C1`, `CUSUM`, ...) |
+| `params_json` | text | That strategy's configuration for this run, as JSON |
+| `window_weeks` | integer, at least 1 | The configured sync window at the time (not necessarily how much history every series actually had) |
+| `started_at` | timestamptz | When the run began |
+| `finished_at` | timestamptz, nullable | When it finished; null while still running |
+| `series_evaluated` | integer | How many series had at least one observation to evaluate |
+| `alerts_created` | integer | How many **new** alerts this run created (an already-existing alert for the same week is not recounted) |
+
+## `alert`
+
+One (series, period, algorithm) that crossed that algorithm's threshold.
+Insert-only until Phase 4 adds the reviewed status transitions.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | bigint, generated | Internal identifier |
+| `series_id` | bigint | The series this alert is about (deleted with it) |
+| `period_start` | date | The **Monday** that starts the alerted week |
+| `algorithm` | varchar(32) | Which strategy raised it |
+| `score` | numeric(14,4) | The strategy's statistic for that week |
+| `threshold` | numeric(14,4) | The strategy's threshold at the time |
+| `severity` | varchar(16) | `LOW`, `MEDIUM` or `HIGH` — see `Severity` |
+| `status` | varchar(16) | `OPEN`, `ACKNOWLEDGED`, `RESOLVED` or `DISMISSED`; only `OPEN` is ever written before Phase 4 |
+| `detection_run_id` | bigint | Which run produced it |
+| `created_at` | timestamptz | When the alert was created |
+
+Unique on (`series_id`, `period_start`, `algorithm`) — this is what makes
+detection idempotent: re-running it over an unchanged series creates no
+second alert for a week already alerted on by the same algorithm.
+`period_start` must be a Monday.
+
 ## `shedlock`
 
 Not application data — the lock ShedLock uses so the scheduled DHIS2 sync runs
