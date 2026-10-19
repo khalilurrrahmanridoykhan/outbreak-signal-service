@@ -27,7 +27,7 @@ import org.springframework.context.annotation.Import;
  * running it twice over an unchanged series creates no second round of
  * alerts.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class DetectionServiceIntegrationTest {
 

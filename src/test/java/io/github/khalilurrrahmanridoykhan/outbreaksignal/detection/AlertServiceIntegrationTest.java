@@ -28,7 +28,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
  * timing, so this is the same scenario a real race would produce, without a
  * flaky test that depends on getting two threads' timing exactly right.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class AlertServiceIntegrationTest {
 
