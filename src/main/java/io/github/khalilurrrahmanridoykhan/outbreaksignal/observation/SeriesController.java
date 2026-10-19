@@ -21,11 +21,11 @@ class SeriesController {
 
     @GetMapping
     Page<SeriesSummary> list(@PageableDefault(size = 20) Pageable pageable) {
-        return seriesService.list(pageable).map(SeriesSummary::from);
+        return seriesService.list(pageable);
     }
 
     @GetMapping("/{id}/observations")
     List<ObservationSummary> observations(@PathVariable Long id) {
-        return seriesService.observations(id).stream().map(ObservationSummary::from).toList();
+        return seriesService.observations(id);
     }
 }
