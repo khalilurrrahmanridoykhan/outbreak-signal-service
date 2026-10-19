@@ -1,12 +1,21 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.detection;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-/** Maps this package's own exceptions to RFC 9457 problem documents; see {@code ApiExceptionHandler} for the generic ones. */
+/**
+ * Maps this package's own exceptions to RFC 9457 problem documents; see
+ * {@code ApiExceptionHandler} for the generic ones and for why this needs
+ * {@code @Order(HIGHEST_PRECEDENCE)} — without it, an unrelated
+ * {@code @ControllerAdvice} with a broad catch-all handler can shadow this
+ * one's more specific handlers entirely, regardless of how specific they are.
+ */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class AlertExceptionHandler {
 
     @ExceptionHandler(AlertNotFoundException.class)
