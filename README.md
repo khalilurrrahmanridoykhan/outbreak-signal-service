@@ -24,7 +24,7 @@ is not implemented yet.
 |---|---|---|
 | 1 | Scaffold, PostgreSQL schema, CI, repository standards | **Done** |
 | 2 | DHIS2 client and idempotent sync | **Done** |
-| 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | Planned |
+| 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | **Done** |
 | 4 | Alerts API with lifecycle and JWT security | Planned |
 | 5 | Notifications: signed webhooks and email via a transactional outbox | Planned |
 | 6 | FHIR output (`DetectedIssue`, read-only) | Planned |
@@ -50,6 +50,13 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
 - A scheduled sync (daily by default, configurable) coordinated with ShedLock
   so only one running instance ever syncs at a time, plus a manual
   `POST /api/v1/sync` trigger.
+- Five aberration-detection strategies (moving-average z-score, CDC EARS
+  C1/C2/C3, a one-sided CUSUM), each hand-verified against independently
+  computed fixtures, running automatically right after every sync and
+  creating an `alert` idempotently — see
+  [RESULTS.md](RESULTS.md) for how they actually perform against a synthetic
+  outbreak, measured, including where one of them (CUSUM) looks worse on a
+  naive metric than it really is.
 
 ## Quickstart
 
@@ -94,7 +101,7 @@ with your own instance's details for anything beyond trying this out.
 DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
                                      │
                                      ▼
-                             detection engine
+                             detection engine        ◀── done (5 strategies)
                        (Strategy beans: EARS, CUSUM, ...)
                                      │
                                      ▼
@@ -108,8 +115,11 @@ DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
 REST /api/v1/**  (JWT, roles)        FHIR /fhir/DetectedIssue (read-only)
 ```
 
-`datasource` (DHIS2 in) and the persistence layer exist so far. The reasoning
-behind each choice is recorded in [DECISIONS.md](DECISIONS.md).
+`datasource` (DHIS2 in), the persistence layer, and `detection` exist so far;
+`detection` runs over every series' whole history and writes `alert` rows
+directly (insert-only, always `OPEN`) — the state machine and audit trail
+above arrive with Phase 4. The reasoning behind each choice is recorded in
+[DECISIONS.md](DECISIONS.md).
 
 ## Configuration
 
@@ -123,6 +133,9 @@ behind each choice is recorded in [DECISIONS.md](DECISIONS.md).
 | `outbreak.dhis2.base-url` | `DHIS2_BASE_URL` | the public demo (see [docs/dhis2-spike.md](docs/dhis2-spike.md)) | DHIS2 instance base URL |
 | `outbreak.dhis2.username` / `.password` | `DHIS2_USERNAME` / `DHIS2_PASSWORD` | `admin` / `district` (the demo's own public login) | Basic-auth credentials |
 | `outbreak.dhis2.org-unit-level` | `DHIS2_ORG_UNIT_LEVEL` | `3` | Hierarchy level synced as this project's "org unit" (district, on the demo) |
+| `outbreak.detection.moving-average.baseline-weeks` / `.threshold-k` | `OUTBREAK_DETECTION_MOVING_AVERAGE_*` | `12` / `3.0` | Moving-average z-score baseline length and alarm threshold |
+| `outbreak.detection.ears.baseline-weeks` / `.threshold` | `OUTBREAK_DETECTION_EARS_*` | `7` / `3.0` | Shared by EARS C1, C2 and C3 (C2's 2-week guard band is fixed, not configurable) |
+| `outbreak.detection.cusum.baseline-weeks` / `.reference-k-sigma` / `.threshold-h-sigma` | `OUTBREAK_DETECTION_CUSUM_*` | `8` / `0.5` / `5.0` | CUSUM's reference window and its slack/threshold, in standard deviations |
 
 The data elements synced (`outbreak.dhis2.data-elements`) are a list in
 `application.yml`, not single environment variables; override the whole list
@@ -168,20 +181,24 @@ Colima notes.
 src/main/java/.../outbreaksignal
   ├── observation/   organisation units, series, observations, repositories
   ├── datasource/    DhisClient/DhisWebClient, Dhis2SyncService, scheduling
+  ├── detection/      strategies, DetectionService, detection_run/alert
   ├── config/        typed, validated application settings
   └── common/        error model (RFC 9457), EpiWeek
-src/main/resources/db/migration   Flyway migrations
-docs/dhis2-spike.md                findings from the public DHIS2 demo
+src/test/.../detection/backtest/   the synthetic-outbreak backtest
+src/main/resources/db/migration     Flyway migrations
+docs/dhis2-spike.md                  findings from the public DHIS2 demo
+RESULTS.md                           measured backtest numbers
 ```
 
-More packages (`detection`, `alert`, `notification`, `fhir`, `security`)
-arrive with their phases.
+More packages (`alert`, `notification`, `fhir`, `security`) arrive with
+their phases.
 
 ## Documentation
 
 - [DECISIONS.md](DECISIONS.md): architecture decision records
 - [DATA_DICTIONARY.md](DATA_DICTIONARY.md): tables and columns
 - [DATA_PROVENANCE.md](DATA_PROVENANCE.md): where data comes from
+- [RESULTS.md](RESULTS.md): measured backtest numbers, strategy by strategy
 - [ETHICS.md](ETHICS.md): responsible use and limits
 - [docs/repo-setup.md](docs/repo-setup.md): how the repository settings are managed
 

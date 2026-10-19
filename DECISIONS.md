@@ -146,3 +146,91 @@ practical lesson carries over unchanged either way: a sync must treat an
 empty or short recent window as normal, and a test must never assert
 freshness against "the newest week," regardless of which explanation (frozen
 seed, or bursty reseeding) turns out to be correct on any given day.
+
+## 19. An alert is created with a Java find-then-save, not a native upsert
+
+The plan's own wording for this ("unique constraint plus `INSERT … ON
+CONFLICT DO NOTHING` semantics") suggested a native query, but
+`DetectionService` instead checks `AlertRepository.findBySeriesIdAndPeriod...`
+and only saves if nothing came back — the same pattern already used for
+`Observation`, `Series` and `OrgUnit` (see decision 2's neighbours). The
+required behaviour is identical either way (an existing alert, and any
+human review of it once Phase 4 adds that, is never touched by a later
+detection run), and matching the codebase's one established pattern beat
+introducing a second, native-SQL one for just this table. The same
+ShedLock-based "only one writer" reasoning already relied on for the sync's
+own upserts applies here too.
+
+## 20. Jackson 3 lives under `tools.jackson.*`, not `com.fasterxml.jackson.*`
+
+Spring Boot 4.1 pulls Jackson 3 (`spring-boot-starter-jackson` →
+`tools.jackson.core:jackson-databind`), which moved its core and databind
+packages to the `tools.jackson` namespace; `jackson-annotations` is the one
+module that kept its old `com.fasterxml.jackson.annotation` package. Reaching
+for `com.fasterxml.jackson.databind.ObjectMapper` out of habit fails to
+compile with no hint why beyond "package does not exist" — worth knowing
+before it costs someone else the same lookup. `DetectionService` injects the
+Boot-provided `tools.jackson.databind.ObjectMapper` bean rather than
+constructing its own, so its settings (if the app ever configures any) stay
+consistent with whatever serialises the REST API's own JSON.
+
+## 21. Severity is a fixed ratio of score to threshold, the same for every algorithm
+
+`Severity.fromScoreOverThreshold` uses one simple rule (at least double the
+threshold is `HIGH`, one and a half times is `MEDIUM`, otherwise `LOW`)
+applied identically across all five strategies, even though their
+thresholds are each calibrated in different units underneath. This is a
+placeholder good enough to populate the column now; revisit if a later
+phase needs severity to carry a more specific meaning (for example, tied to
+clinical case-fatality thresholds per disease) rather than purely how far
+past its own trigger a statistic landed.
+
+## 22. Detection runs as the second step of the sync's own schedule, not its own
+
+`Dhis2SyncScheduler.scheduledSync()` calls `syncService.sync()` then
+`detectionService.runDetection()` in the same `@Scheduled` method, under the
+one ShedLock lock — matching the plan's "scheduled to run after each
+successful sync" rather than giving detection an independent cron and a
+second lock name. `Dhis2SyncService.sync()` never throws (decision 17), so
+detection always runs once sync has at least attempted every data element.
+
+## 23. The strategy classes are public, for the backtest's sake
+
+Phase 3's hand-verified unit tests sit in the same package as the strategies
+and so never needed public visibility. The backtest (`detection.backtest`,
+a genuinely separate sub-package, matching the plan's own description of it
+as "a backtest module") needs to construct the same five strategies with
+their production defaults, which meant making the classes and their
+constructors public. Nothing about the architecture rule in decision-adjacent
+`PackageDependencyTest` changes — only `detection` package internals outside
+the strategies' own visibility boundary, not the one-directional dependency
+on `datasource`, which this does not touch.
+
+## 24. The backtest reports two false-alarm numbers because CUSUM's statistic decays slowly
+
+Measuring raw alarmed-weeks-outside-the-window as "false alarms" badly
+overstates CUSUM's error rate: once its cumulative statistic crosses the
+threshold during a real injected outbreak, it takes roughly 20-30 weeks of
+calm data afterward to fall back below it, and every one of those weeks
+counted as a separate false alarm under the naive metric (19.4 per 100
+weeks). Collapsing a run of consecutive alarmed weeks into one "episode"
+before counting brings CUSUM in line with the other four strategies (1.7 per
+100, versus their 1.1-2.1) — confirming this was a measurement artifact of a
+slow-resetting statistic, not CUSUM genuinely raising far more unrelated
+false alarms. Both numbers are kept in `RESULTS.md` rather than only the
+flattering one, with the explanation; see that file for the full numbers.
+
+## 25. The manual `POST /api/v1/sync` trigger does not also run detection
+
+Found while manually verifying this phase against the live DHIS2 demo: a
+sync triggered by hand left `detection_run` and `alert` both empty, because
+only the cron-scheduled path chains sync into detection
+(`Dhis2SyncScheduler`); `Dhis2SyncController` calls `Dhis2SyncService.sync()`
+alone. On reflection this matches the plan, not a bug in it: Phase 4 lists a
+separate manual `POST /detection/run`, meaning the two are meant to be
+independently triggerable actions, and only the *scheduled* run is specified
+to chain them ("scheduled to run after each successful sync"). No production
+code changed; what did change is that `Dhis2SyncSchedulerTest` now exists,
+since nothing before this had actually exercised the scheduler's own wiring
+— every other test covers `Dhis2SyncService` or `DetectionService` directly,
+never the thing that chains them.
