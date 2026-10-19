@@ -25,7 +25,7 @@ is not implemented yet.
 | 1 | Scaffold, PostgreSQL schema, CI, repository standards | **Done** |
 | 2 | DHIS2 client and idempotent sync | **Done** |
 | 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | **Done** |
-| 4 | Alerts API with lifecycle and JWT security | Planned |
+| 4 | Alerts API with lifecycle and JWT security | **Done** |
 | 5 | Notifications: signed webhooks and email via a transactional outbox | Planned |
 | 6 | FHIR output (`DetectedIssue`, read-only) | Planned |
 | 7 | Observability, packaging, `v0.1.0` release | Planned |
@@ -57,6 +57,18 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   [RESULTS.md](RESULTS.md) for how they actually perform against a synthetic
   outbreak, measured, including where one of them (CUSUM) looks worse on a
   naive metric than it really is.
+- A REST API over `/api/v1`: paginated, filterable `GET /alerts`, an alert's
+  full reviewed history at `GET /alerts/{id}`, and
+  `acknowledge`/`resolve`/`dismiss` enforcing an explicit state machine
+  (`409` on an illegal move) with optimistic locking (`409` on a stale
+  concurrent review) — plus read-only `GET /series` and
+  `GET /series/{id}/observations`.
+- An OAuth2 resource server securing all of it: JWT bearer tokens, roles
+  read from Keycloak's own `realm_access.roles` claim, reviewing an alert
+  needs `ANALYST` or `ADMIN`, triggering a sync or a detection run needs
+  `ADMIN`. Interactive API docs at `/swagger-ui/index.html`. See
+  [docs/keycloak.md](docs/keycloak.md) to try it with a real token from the
+  optional local Keycloak.
 
 ## Quickstart
 
@@ -83,17 +95,57 @@ anywhere real.
 
 By default, the app is configured to sync from the **public DHIS2 demo
 instance** (its own intentionally public `admin`/`district` login — see
-[docs/dhis2-spike.md](docs/dhis2-spike.md)), on a daily schedule. Trigger a
-sync immediately instead of waiting for it:
+[docs/dhis2-spike.md](docs/dhis2-spike.md)), on a daily schedule. Every
+`/api/v1/**` endpoint needs a JWT bearer token (`ADMIN` to trigger a sync or
+detection run, any role to read, `ANALYST`/`ADMIN` to review an alert); with
+no issuer running, `docker compose up`'s plain form always answers `401` on
+these, which is expected — bring up the optional local Keycloak instead to
+get a real token and try the secured API:
 
 ```bash
-curl -X POST localhost:8080/api/v1/sync
+docker compose --profile keycloak up --build
 ```
 
-The first run against the live demo takes roughly a minute (five data
-elements, over a hundred weeks each) and is unsecured for now — see
-[DECISIONS.md](DECISIONS.md) #8. Override every `outbreak.dhis2.*` setting
-with your own instance's details for anything beyond trying this out.
+Then see [docs/keycloak.md](docs/keycloak.md) for the three test users and
+how to mint a token and call `POST /api/v1/sync` (`ADMIN`, roughly a minute
+against the live demo — five data elements, over a hundred weeks each),
+`POST /api/v1/detection/run` (`ADMIN`), and the alerts API. Override every
+`outbreak.dhis2.*` setting with your own instance's details, and
+`outbreak.security.jwk-set-uri` with your own identity provider's, for
+anything beyond trying this out.
+
+## API tour
+
+Every call below needs `Authorization: Bearer $TOKEN` — see
+[docs/keycloak.md](docs/keycloak.md) for `$TOKEN`. Full interactive docs
+(with the bearer scheme already wired up) are at
+`http://localhost:8080/swagger-ui/index.html`.
+
+```bash
+# Paginated, filterable
+curl -H "Authorization: Bearer $TOKEN" \
+  "localhost:8080/api/v1/alerts?status=OPEN&algorithm=EARS_C3&page=0&size=20"
+
+# One alert, with its full reviewed history
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/alerts/62
+
+# ANALYST or ADMIN only
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/alerts/62/acknowledge
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/alerts/62/resolve
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/alerts/83/dismiss \
+  -H "Content-Type: application/json" -d '{"reason": "Reporting correction, confirmed with district team"}'
+
+# A series and its weekly values
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/series
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/series/1/observations
+```
+
+An illegal move (resolving an alert that was never acknowledged) returns
+`409` naming the attempted transition:
+
+```json
+{"detail": "Cannot move an alert from OPEN to RESOLVED", "status": 409, "from": "OPEN", "to": "RESOLVED"}
+```
 
 ## Architecture (target)
 
@@ -105,20 +157,22 @@ DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
                        (Strategy beans: EARS, CUSUM, ...)
                                      │
                                      ▼
-                       alert service (state machine, audit trail)
+                       alert service (state machine, audit trail)   ◀── done
                                      │  same transaction
                                      ▼
-                                transactional outbox
+                                transactional outbox                ◀── Phase 5
                                      ├──▶ signed webhooks
                                      └──▶ email
 
-REST /api/v1/**  (JWT, roles)        FHIR /fhir/DetectedIssue (read-only)
+REST /api/v1/**  (JWT, roles)  ◀── done     FHIR /fhir/DetectedIssue (Phase 6)
 ```
 
-`datasource` (DHIS2 in), the persistence layer, and `detection` exist so far;
-`detection` runs over every series' whole history and writes `alert` rows
-directly (insert-only, always `OPEN`) — the state machine and audit trail
-above arrive with Phase 4. The reasoning behind each choice is recorded in
+Everything except the transactional outbox and FHIR output exists so far.
+Every alert transition (`acknowledge`/`resolve`/`dismiss`) is enforced by an
+explicit state machine and writes an append-only `alert_event` in the same
+transaction as the status change; optimistic locking (`@Version`) means a
+stale concurrent review fails with `409` rather than silently losing the
+other reviewer's change. The reasoning behind each choice is recorded in
 [DECISIONS.md](DECISIONS.md).
 
 ## Configuration
@@ -136,6 +190,7 @@ above arrive with Phase 4. The reasoning behind each choice is recorded in
 | `outbreak.detection.moving-average.baseline-weeks` / `.threshold-k` | `OUTBREAK_DETECTION_MOVING_AVERAGE_*` | `12` / `3.0` | Moving-average z-score baseline length and alarm threshold |
 | `outbreak.detection.ears.baseline-weeks` / `.threshold` | `OUTBREAK_DETECTION_EARS_*` | `7` / `3.0` | Shared by EARS C1, C2 and C3 (C2's 2-week guard band is fixed, not configurable) |
 | `outbreak.detection.cusum.baseline-weeks` / `.reference-k-sigma` / `.threshold-h-sigma` | `OUTBREAK_DETECTION_CUSUM_*` | `8` / `0.5` / `5.0` | CUSUM's reference window and its slack/threshold, in standard deviations |
+| `outbreak.security.jwk-set-uri` | `OUTBREAK_SECURITY_JWK_SET_URI` | the optional local Keycloak's JWK endpoint | Where to validate incoming JWTs' signatures against |
 
 The data elements synced (`outbreak.dhis2.data-elements`) are a list in
 `application.yml`, not single environment variables; override the whole list
@@ -181,17 +236,19 @@ Colima notes.
 src/main/java/.../outbreaksignal
   ├── observation/   organisation units, series, observations, repositories
   ├── datasource/    DhisClient/DhisWebClient, Dhis2SyncService, scheduling
-  ├── detection/      strategies, DetectionService, detection_run/alert
+  ├── detection/     strategies, DetectionService, alert lifecycle + REST API
+  ├── security/      OAuth2 resource server, role mapping, OpenAPI
   ├── config/        typed, validated application settings
   └── common/        error model (RFC 9457), EpiWeek
 src/test/.../detection/backtest/   the synthetic-outbreak backtest
 src/main/resources/db/migration     Flyway migrations
+keycloak/realm-export.json           the optional local Keycloak's realm
 docs/dhis2-spike.md                  findings from the public DHIS2 demo
+docs/keycloak.md                     trying the secured API with a real token
 RESULTS.md                           measured backtest numbers
 ```
 
-More packages (`alert`, `notification`, `fhir`, `security`) arrive with
-their phases.
+More packages (`notification`, `fhir`) arrive with their phases.
 
 ## Documentation
 
@@ -200,6 +257,7 @@ their phases.
 - [DATA_PROVENANCE.md](DATA_PROVENANCE.md): where data comes from
 - [RESULTS.md](RESULTS.md): measured backtest numbers, strategy by strategy
 - [ETHICS.md](ETHICS.md): responsible use and limits
+- [docs/keycloak.md](docs/keycloak.md): trying the secured API with a real token
 - [docs/repo-setup.md](docs/repo-setup.md): how the repository settings are managed
 
 ## Contributing

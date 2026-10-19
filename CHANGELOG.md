@@ -45,3 +45,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A synthetic-outbreak backtest (`BacktestTest`) measuring sensitivity,
   false-alarm rate and detection delay for every strategy against a fixed
   seed; results in `RESULTS.md`.
+- An explicit alert lifecycle state machine (`AlertTransitions`): `OPEN` to
+  `ACKNOWLEDGED` to `RESOLVED`, or to `DISMISSED` (reason required) from
+  either `OPEN` or `ACKNOWLEDGED`. An illegal move returns `409` naming the
+  attempted transition. `alert_event`: an append-only audit trail, one row
+  per successful move.
+- Optimistic locking on `alert` (`@Version`): a stale concurrent review fails
+  with `409` instead of silently overwriting another reviewer's change.
+- A REST API over `/api/v1`: paginated, filterable `GET /alerts`,
+  `GET /alerts/{id}` with full history, `POST /alerts/{id}/acknowledge`,
+  `/resolve` and `/dismiss`, `GET /series`, `GET /series/{id}/observations`,
+  and `POST /detection/run`.
+- An OAuth2 resource server: every `/api/v1/**` endpoint needs a JWT; roles
+  (`VIEWER`, `ANALYST`, `ADMIN`) are read from a Keycloak-shaped
+  `realm_access.roles` claim. Reviewing an alert needs `ANALYST` or `ADMIN`;
+  triggering a sync or detection run needs `ADMIN`.
+- An optional local Keycloak Compose profile with a pre-imported realm and
+  three test users, for trying the secured API with a real token — see
+  `docs/keycloak.md`.
+- Interactive OpenAPI/Swagger UI docs (springdoc), with the bearer scheme
+  documented.
