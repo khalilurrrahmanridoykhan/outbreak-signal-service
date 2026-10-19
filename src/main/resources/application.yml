@@ -47,6 +47,17 @@ outbreak:
         name: IDSR Plague
       - uid: noIzB569hTM
         name: IDSR Yellow fever
+  detection:
+    moving-average:
+      baseline-weeks: ${OUTBREAK_DETECTION_MOVING_AVERAGE_BASELINE_WEEKS:12}
+      threshold-k: ${OUTBREAK_DETECTION_MOVING_AVERAGE_THRESHOLD_K:3.0}
+    ears:
+      baseline-weeks: ${OUTBREAK_DETECTION_EARS_BASELINE_WEEKS:7}
+      threshold: ${OUTBREAK_DETECTION_EARS_THRESHOLD:3.0}
+    cusum:
+      baseline-weeks: ${OUTBREAK_DETECTION_CUSUM_BASELINE_WEEKS:8}
+      reference-k-sigma: ${OUTBREAK_DETECTION_CUSUM_REFERENCE_K_SIGMA:0.5}
+      threshold-h-sigma: ${OUTBREAK_DETECTION_CUSUM_THRESHOLD_H_SIGMA:5.0}
 
 management:
   endpoints:
