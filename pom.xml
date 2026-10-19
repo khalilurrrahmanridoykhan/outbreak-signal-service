@@ -97,6 +97,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>3.1.1</version>
+    </dependency>
 
     <!-- WebClient, used synchronously (.block()), to match the rest of this
          project's blocking style; no reactive web server is started. -->
