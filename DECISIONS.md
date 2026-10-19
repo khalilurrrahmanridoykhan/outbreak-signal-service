@@ -234,3 +234,121 @@ code changed; what did change is that `Dhis2SyncSchedulerTest` now exists,
 since nothing before this had actually exercised the scheduler's own wiring
 — every other test covers `Dhis2SyncService` or `DetectionService` directly,
 never the thing that chains them.
+
+## 26. Full-context tests moved off `WebEnvironment.NONE`
+
+`Dhis2SyncServiceIntegrationTest`, `DetectionServiceIntegrationTest` and
+`AlertServiceIntegrationTest` all used `@SpringBootTest(webEnvironment =
+WebEnvironment.NONE)`, since none of them make an HTTP call. Adding
+`SecurityConfig`'s `SecurityFilterChain` bean broke all three: Spring Boot's
+security auto-configuration does not register the `HttpSecurity` bean
+`WebSecurityConfiguration` provides in a non-web application context, so the
+bean method requiring it had nothing to autowire. None of the three needed
+`NONE` specifically — the default `MOCK` web environment fixes it with no
+change to what any of them exercise.
+
+## 27. `SecurityConfig` needs `@EnableWebSecurity` explicitly
+
+Spring Boot normally enables `@EnableWebSecurity`'s machinery itself once it
+sees a `SecurityFilterChain` bean in a full application context, which is why
+the bean worked without it there. The same implicit enabling did not reliably
+reach `@WebMvcTest` slices in this Spring Boot/Security combination — the
+slice's auto-configuration imported `OAuth2ResourceServerWebSecurityAutoConfiguration`
+but never `WebSecurityConfiguration` itself, so the `HttpSecurity` bean was
+still missing there too. Adding `@EnableWebSecurity` directly to
+`SecurityConfig` makes it register unconditionally, in both places, rather
+than depending on an auto-enabling behaviour that does not reach every
+context type.
+
+## 28. A `@ControllerAdvice`'s catch-all can shadow another advice bean's specific handler
+
+`ExceptionHandlerExceptionResolver` picks the first `@ControllerAdvice` bean
+(ordered by `@Order`, defaulting to `Ordered.LOWEST_PRECEDENCE` when
+unannotated) that has *any* applicable handler — it does not scan every
+advice bean in the application for the single most specific match. With
+`AlertExceptionHandler`/`ObservationExceptionHandler` both left at the
+default order, they tied with `ApiExceptionHandler`'s default, and whichever
+bean happened to be checked first "won" for every exception, including ones
+only the *other* bean had a specific handler for. In practice this turned
+`AlertNotFoundException`, `IllegalAlertTransitionException` and
+`SeriesNotFoundException` into generic 500s via `ApiExceptionHandler`'s
+`Exception.class` catch-all, caught by `AlertControllerTest` and
+`SeriesControllerTest` once they exercised real (not pre-built) 404/409
+cases. Fixed by giving the domain-specific advice classes
+`@Order(Ordered.HIGHEST_PRECEDENCE)` and the generic one
+`@Order(Ordered.LOWEST_PRECEDENCE)` explicitly, rather than relying on two
+defaults happening to break the tie the right way. The same catch-all was
+also swallowing Spring Security's `AccessDeniedException` as a 500 instead of
+403, for a related reason: a `@PreAuthorize` denial is thrown from inside the
+controller's own call stack, so a `HandlerExceptionResolver`-based catch-all
+intercepts it before `ExceptionTranslationFilter` (further out, at the filter
+chain level) ever sees it. `ApiExceptionHandler` now maps
+`AccessDeniedException` to 403 itself.
+
+## 29. DTO mapping that touches a lazy association must happen inside the owning service's transaction
+
+`AlertSummary.from(alert)` reads `alert.getSeries().getOrgUnit()`, both lazy
+associations (`spring.jpa.open-in-view` is off, per decision 8's neighbours).
+`AlertService.search()`/`AlertController.list()` used to return `Page<Alert>`
+and map it to `Page<AlertSummary>` in the controller, after the loading
+transaction had already closed — throwing `LazyInitializationException` on
+every *real* alert. No test caught this: `AlertServiceIntegrationTest` only
+asserted `.getStatus()` (an eager field, never a lazy one), and the
+`@WebMvcTest` slices mock `AlertService` entirely, returning hand-built
+`Alert`/`Series`/`OrgUnit` objects that are plain Java objects with no proxy
+at all, so there was never anything to lazily fail to load. It surfaced only
+while verifying this phase end to end against real Postgres data (see
+`docs/keycloak.md`). Fixed by moving every DTO mapping into `AlertService`
+and `SeriesService` themselves, each wrapped in `@Transactional(readOnly =
+true)`, so the session is still open when the lazy association is actually
+read; `AlertController`/`SeriesController` now only ever see already-built
+DTOs. A new regression test
+(`AlertServiceIntegrationTest.searchAndDetailResolveTheLazyOrgUnitAndSeriesNamesWithoutError`)
+asserts the real `orgUnitName`/`dataElementName` values, not just that no
+exception was thrown, so a future refactor that reopens this gap fails loudly.
+
+## 30. An alert's `actor` is the JWT's `sub` claim, a stable id, not the username
+
+`Principal.getName()` on the `JwtAuthenticationToken` Spring Security builds
+returns the token's `sub` claim by default — in Keycloak's case, the user's
+internal UUID, not `preferred_username`. Recording that UUID in `alert_event`
+rather than switching to a more "readable" claim is deliberate: `sub` is the
+one claim guaranteed stable for the life of the account, where a username
+could be changed; an audit trail is exactly the place that stability matters
+more than readability. A UI built on this API is where a username lookup
+belongs, not the audit record itself.
+
+## 31. The optional Keycloak profile needs two non-obvious fixes to actually issue a token
+
+Verifying Phase 4 end to end (not just through mocked tests) against a real
+Keycloak surfaced two problems neither obvious from the error Keycloak gives
+nor from anything in this project's own code:
+
+- Keycloak 26's declarative User Profile requires `firstName` and `lastName`
+  on every user; without them the password grant fails with
+  `"Account is not fully set up"` / `resolve_required_actions`, an error that
+  names neither field. `keycloak/realm-export.json`'s three users set both.
+- The app reaches Keycloak through Compose's internal network
+  (`http://keycloak:8080/...`), never `localhost` — `localhost` inside the
+  `app` container means the container itself. Pointing the app's
+  `OUTBREAK_SECURITY_JWK_SET_URI` at `localhost:8081` (the host-mapped port,
+  correct for a `curl` run from the host) made every call fail with a bare
+  401 regardless of the token, which looks like a validation failure but was
+  really a DNS one. `docker-compose.yml`'s `app` service now sets the
+  internal URI explicitly; see `docs/keycloak.md` for both.
+
+## 32. CSRF protection is deliberately disabled, and CodeQL's flag for that is a false positive here
+
+`SecurityConfig` disables CSRF (`java/spring-disabled-csrf-protection`,
+CodeQL's generic rule, flagged this as a high-severity finding on the PR).
+CSRF attacks work by riding an *ambient* credential a browser attaches
+automatically to a cross-site request — a cookie. This API has no
+cookie-based session at all (`SessionCreationPolicy.STATELESS`); every
+request carries its own bearer token in an `Authorization` header, which a
+browser never attaches to a cross-origin request on its own. There is
+nothing for CSRF to exploit, which is exactly the case Spring Security's own
+reference documentation names as the right time to disable it. Suppressed
+with an inline `codeql[java/spring-disabled-csrf-protection]` comment and the
+corresponding alert dismissed as a false positive, both with this same
+reasoning, rather than either leaving the PR blocked or "fixing" it by adding
+CSRF protection a stateless bearer-token API gets no benefit from.

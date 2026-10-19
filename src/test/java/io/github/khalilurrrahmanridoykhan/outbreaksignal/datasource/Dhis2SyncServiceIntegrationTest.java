@@ -36,7 +36,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * plan's own requirement: a sync run three times leaves exactly one
  * {@code observation} row per (series, week), not three.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest
 @Import({TestcontainersConfiguration.class, Dhis2SyncServiceIntegrationTest.FixedClockConfig.class})
 class Dhis2SyncServiceIntegrationTest {
 

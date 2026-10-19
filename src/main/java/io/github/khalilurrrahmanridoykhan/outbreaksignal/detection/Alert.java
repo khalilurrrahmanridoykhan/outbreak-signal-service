@@ -13,14 +13,18 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
 /**
  * One (series, period, algorithm) that crossed that algorithm's threshold.
- * Insert-only in this phase: {@link AlertStatus} stays {@code OPEN} until
- * Phase 4 adds the reviewed transitions.
+ * {@code status} starts at {@code OPEN} and moves only through
+ * {@link #transitionTo}, which enforces {@link AlertTransitions}; the
+ * {@code @Version} column means a save against a stale copy of this alert
+ * (two people reviewing it at once) fails rather than silently overwriting
+ * the other's change.
  */
 @Entity
 @Table(name = "alert", uniqueConstraints = @UniqueConstraint(
@@ -61,6 +65,10 @@ public class Alert {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     protected Alert() {
     }
@@ -115,5 +123,22 @@ public class Alert {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public long getVersion() {
+        return version;
+    }
+
+    /**
+     * Moves this alert to {@code to}, throwing {@link IllegalAlertTransitionException}
+     * if that move is not one {@link AlertTransitions} allows from the current status.
+     *
+     * @return the status this alert was in before the move, for the caller to record as an {@code AlertEvent}
+     */
+    public AlertStatus transitionTo(AlertStatus to) {
+        AlertTransitions.requireAllowed(status, to);
+        AlertStatus from = status;
+        status = to;
+        return from;
     }
 }

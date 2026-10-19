@@ -1,15 +1,15 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.datasource;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Triggers a sync on demand. Unsecured for now — see DECISIONS.md #8, Spring
- * Security arrives with Phase 4's endpoints, which will restrict this one to
- * {@code ADMIN} the same as the scheduled trigger already is implicitly (it
- * runs only inside this service). Calling it talks to whatever DHIS2 instance
- * is configured, which defaults to the public demo.
+ * Triggers a sync on demand, restricted to {@code ADMIN} — the same as the
+ * scheduled trigger already is implicitly, since that one runs only inside
+ * this service with no caller at all. Calling it talks to whatever DHIS2
+ * instance is configured, which defaults to the public demo.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -22,6 +22,7 @@ class Dhis2SyncController {
     }
 
     @PostMapping("/sync")
+    @PreAuthorize("hasRole('ADMIN')")
     SyncResult triggerSync() {
         return syncService.sync();
     }
