@@ -58,6 +58,12 @@ outbreak:
       baseline-weeks: ${OUTBREAK_DETECTION_CUSUM_BASELINE_WEEKS:8}
       reference-k-sigma: ${OUTBREAK_DETECTION_CUSUM_REFERENCE_K_SIGMA:0.5}
       threshold-h-sigma: ${OUTBREAK_DETECTION_CUSUM_THRESHOLD_H_SIGMA:5.0}
+  security:
+    # The optional local Keycloak profile's JWK endpoint (docker-compose.yml,
+    # `keycloak` profile). Building the JwtDecoder from this never contacts it
+    # eagerly, so the app starts fine even when that profile is not running;
+    # override for a real deployment's own identity provider.
+    jwk-set-uri: ${OUTBREAK_SECURITY_JWK_SET_URI:http://localhost:8081/realms/outbreak-signal/protocol/openid-connect/certs}
 
 management:
   endpoints:

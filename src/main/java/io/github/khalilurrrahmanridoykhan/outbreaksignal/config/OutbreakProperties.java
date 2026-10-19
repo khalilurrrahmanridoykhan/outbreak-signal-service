@@ -15,7 +15,10 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "outbreak")
 public record OutbreakProperties(
-        @Valid @DefaultValue Sync sync, @Valid Dhis2 dhis2, @Valid @DefaultValue Detection detection) {
+        @Valid @DefaultValue Sync sync,
+        @Valid Dhis2 dhis2,
+        @Valid @DefaultValue Detection detection,
+        @Valid @DefaultValue Security security) {
 
     /**
      * Settings for pulling data from the source system.
@@ -112,5 +115,19 @@ public record OutbreakProperties(
                 @DefaultValue("0.5") @DecimalMin("0.0") double referenceKSigma,
                 @DefaultValue("5.0") @DecimalMin("0.5") double thresholdHSigma) {
         }
+    }
+
+    /**
+     * Where to validate incoming JWTs against. Defaults to the optional local
+     * Keycloak's JWK endpoint (see {@code docker-compose.yml}'s {@code keycloak}
+     * profile) rather than failing closed with no default, because building the
+     * {@code JwtDecoder} from this URI never contacts it eagerly — see
+     * {@code JwtDecoderConfig} for why that means the application still starts
+     * with no issuer running. A real deployment overrides this with its own
+     * identity provider's JWK set URI.
+     *
+     * @param jwkSetUri where to fetch the signing keys used to verify a JWT
+     */
+    public record Security(@DefaultValue("http://localhost:8081/realms/outbreak-signal/protocol/openid-connect/certs") @NotBlank String jwkSetUri) {
     }
 }
