@@ -1,0 +1,59 @@
+{
+  "realm": "outbreak-signal",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "VIEWER", "description": "Can read alerts and series" },
+      { "name": "ANALYST", "description": "Can also acknowledge, resolve and dismiss alerts" },
+      { "name": "ADMIN", "description": "Can also trigger a sync or a detection run" }
+    ]
+  },
+  "users": [
+    {
+      "username": "viewer1",
+      "enabled": true,
+      "firstName": "Viewer",
+      "lastName": "One",
+      "email": "viewer1@example.invalid",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "viewer1-pass", "temporary": false }],
+      "realmRoles": ["VIEWER"]
+    },
+    {
+      "username": "analyst1",
+      "enabled": true,
+      "firstName": "Analyst",
+      "lastName": "One",
+      "email": "analyst1@example.invalid",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "analyst1-pass", "temporary": false }],
+      "realmRoles": ["ANALYST"]
+    },
+    {
+      "username": "admin1",
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "One",
+      "email": "admin1@example.invalid",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "admin1-pass", "temporary": false }],
+      "realmRoles": ["ADMIN"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "outbreak-signal-service",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["*"]
+    }
+  ]
+}

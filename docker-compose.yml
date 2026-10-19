@@ -24,8 +24,35 @@ services:
       DB_URL: jdbc:postgresql://db:5432/outbreaksignal
       DB_USERNAME: outbreak
       DB_PASSWORD: outbreak
+      # Only resolves when the keycloak profile is also running; harmless
+      # otherwise (JwtDecoder construction never contacts it — see
+      # JwtDecoderConfig), since compose's internal DNS simply won't
+      # resolve "keycloak" until that service exists.
+      OUTBREAK_SECURITY_JWK_SET_URI: http://keycloak:8080/realms/outbreak-signal/protocol/openid-connect/certs
     ports:
       - "8080:8080"
+
+  # Optional: a local issuer for real JWTs, so secured endpoints can be
+  # exercised with a real token instead of only through tests' mocked JWTs.
+  # Not started by `docker compose up`; run with:
+  #   docker compose --profile keycloak up
+  # Realm, roles and three test users (viewer1/analyst1/admin1, each with a
+  # password matching "<username>-pass") are pre-imported from
+  # keycloak/realm-export.json — see docs/keycloak.md for how to mint a
+  # token and call the API with it. None of this is appropriate for a real
+  # deployment; a real deployment points outbreak.security.jwk-set-uri at
+  # its own identity provider instead of running this at all.
+  keycloak:
+    image: keycloak/keycloak:26.8
+    profiles: ["keycloak"]
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin # local development only
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8081:8080"
 
 volumes:
   db-data:
