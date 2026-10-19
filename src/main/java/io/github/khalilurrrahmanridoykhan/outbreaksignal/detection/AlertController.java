@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,16 +48,19 @@ class AlertController {
     }
 
     @PostMapping("/{id}/acknowledge")
+    @PreAuthorize("hasAnyRole('ANALYST', 'ADMIN')")
     AlertSummary acknowledge(@PathVariable Long id, Principal principal) {
         return AlertSummary.from(alertService.acknowledge(id, principal.getName()));
     }
 
     @PostMapping("/{id}/resolve")
+    @PreAuthorize("hasAnyRole('ANALYST', 'ADMIN')")
     AlertSummary resolve(@PathVariable Long id, Principal principal) {
         return AlertSummary.from(alertService.resolve(id, principal.getName()));
     }
 
     @PostMapping("/{id}/dismiss")
+    @PreAuthorize("hasAnyRole('ANALYST', 'ADMIN')")
     AlertSummary dismiss(@PathVariable Long id, @Valid @RequestBody DismissRequest request, Principal principal) {
         return AlertSummary.from(alertService.dismiss(id, request.reason(), principal.getName()));
     }
