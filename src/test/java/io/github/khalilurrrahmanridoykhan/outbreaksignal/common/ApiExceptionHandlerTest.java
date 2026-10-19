@@ -14,6 +14,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,22 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.detail").value("An unexpected error occurred."));
     }
 
+    @Test
+    void aStaleUpdateIsAConflictNotA500() throws Exception {
+        mvc.perform(get("/probe/stale"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("This record was changed by someone else; reload it and try again."));
+    }
+
+    @Test
+    void badInputIsABadRequestCarryingTheMessage() throws Exception {
+        mvc.perform(get("/probe/bad-input"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("exactly this message, nothing more"));
+    }
+
     record Payload(@NotBlank String name) {
     }
 
@@ -78,6 +95,16 @@ class ApiExceptionHandlerTest {
         @GetMapping("/probe/boom")
         void boom() {
             throw new IllegalStateException("internal detail that must not be exposed");
+        }
+
+        @GetMapping("/probe/stale")
+        void stale() {
+            throw new ObjectOptimisticLockingFailureException("Probe", 1L);
+        }
+
+        @GetMapping("/probe/bad-input")
+        void badInput() {
+            throw new IllegalArgumentException("exactly this message, nothing more");
         }
     }
 }
