@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.TestcontainersConfiguration;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.OutboxEventRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
@@ -20,6 +21,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Exercises {@link AlertService} and {@link Alert}'s optimistic locking
@@ -49,6 +52,10 @@ class AlertServiceIntegrationTest {
     private SeriesRepository seriesRepository;
     @Autowired
     private OrgUnitRepository orgUnits;
+    @Autowired
+    private OutboxEventRepository outboxEvents;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private Alert openAlert;
 
@@ -65,6 +72,7 @@ class AlertServiceIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        outboxEvents.deleteAll();
         events.deleteAll();
         alerts.deleteAll();
         detectionRuns.deleteAll();
@@ -86,6 +94,8 @@ class AlertServiceIntegrationTest {
         assertThat(history.get(1).fromStatus()).isEqualTo(AlertStatus.ACKNOWLEDGED);
         assertThat(history.get(1).toStatus()).isEqualTo(AlertStatus.RESOLVED);
         assertThat(history).allSatisfy(event -> assertThat(event.actor()).isEqualTo(ANALYST));
+        // One outbox row per transition, same as the alert_event trail above.
+        assertThat(outboxEvents.count()).isEqualTo(2);
     }
 
     @Test
@@ -96,6 +106,31 @@ class AlertServiceIntegrationTest {
         AlertDetail detail = alertService.getDetail(openAlert.getId());
         assertThat(detail.alert().status()).isEqualTo(AlertStatus.OPEN);
         assertThat(detail.history()).isEmpty();
+        assertThat(outboxEvents.count()).isZero();
+    }
+
+    /**
+     * {@link AlertEventPublisher#publish} runs with
+     * {@code Propagation.MANDATORY}, so it joins {@code acknowledge}'s own
+     * transaction rather than opening a separate one; wrapping the whole
+     * call in an outer transaction and forcing that to roll back (instead of
+     * throwing from inside the state machine, which the test above already
+     * covers) proves the outbox row is not just conditionally written, but
+     * genuinely atomic with the alert change and its {@code alert_event} —
+     * the plan's own "force a rollback and assert no outbox row".
+     */
+    @Test
+    void aForcedRollbackAfterAnOtherwiseSuccessfulAcknowledgeLeavesNoOutboxRowEither() {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            alertService.acknowledge(openAlert.getId(), ANALYST);
+            throw new RuntimeException("forced rollback after an otherwise successful transition");
+        })).hasMessageContaining("forced rollback");
+
+        assertThat(alerts.findById(openAlert.getId()).orElseThrow().getStatus()).isEqualTo(AlertStatus.OPEN);
+        assertThat(events.findByAlertIdOrderByCreatedAtAsc(openAlert.getId())).isEmpty();
+        assertThat(outboxEvents.count()).isZero();
     }
 
     @Test

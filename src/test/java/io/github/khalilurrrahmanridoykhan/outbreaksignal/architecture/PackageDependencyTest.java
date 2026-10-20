@@ -29,4 +29,20 @@ class PackageDependencyTest {
 
         rule.check(CLASSES);
     }
+
+    /**
+     * {@code notification} reads alert data through {@code AlertEventPayload}
+     * (built by {@code detection} itself, from its own already-resolved
+     * {@code AlertSummary} — see DECISIONS.md), never through
+     * {@code observation}'s entities directly or through however the data
+     * that fed detection arrived.
+     */
+    @Test
+    void notificationMustNotDependOnDatasourceOrObservation() {
+        ArchRule rule = noClasses().that().resideInAPackage(BASE_PACKAGE + ".notification..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        BASE_PACKAGE + ".datasource..", BASE_PACKAGE + ".observation..");
+
+        rule.check(CLASSES);
+    }
 }
