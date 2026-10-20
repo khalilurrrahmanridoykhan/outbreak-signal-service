@@ -106,14 +106,67 @@ change, never edited or deleted.
 | `actor` | varchar(255) | Who made the move — the JWT's `sub` claim (a stable id, not the username; see `DECISIONS.md` #30) |
 | `created_at` | timestamptz | When the move happened |
 
-## `shedlock`
+## `outbox_event`
 
-Not application data — the lock ShedLock uses so the scheduled DHIS2 sync runs
-on only one instance at a time (`net.javacrumbs.shedlock`'s own schema).
+One domain event — an alert opened, or moved to a new reviewed status —
+written in the **same transaction** as that alert change (see `DECISIONS.md`
+#29 and #33). `payload` is a JSON snapshot of the alert, resolved in that
+same transaction so nothing in it is a lazy association read later.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `name` | varchar(64), primary key | The lock's name (`dhis2-sync`) |
+| `id` | bigint, generated | Internal identifier; the stable id sent to receivers as `X-Event-Id` |
+| `alert_id` | bigint | The alert this event is about (deleted with it) |
+| `event_type` | varchar(32) | The alert's new status (`OPEN`, `ACKNOWLEDGED`, `RESOLVED` or `DISMISSED`) |
+| `payload` | text | A JSON snapshot of the alert at event time |
+| `status` | varchar(16) | `PENDING` or `DISPATCHED` — whether fan-out to `webhook_delivery` rows (and the email attempt) has happened; not whether every delivery succeeded |
+| `created_at` | timestamptz | When the event was written |
+| `dispatched_at` | timestamptz, nullable | When it was fanned out |
+
+## `webhook_subscription`
+
+A target URL that wants a signed HTTP callback for some subset of alert
+events.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | bigint, generated | Internal identifier |
+| `url` | varchar(2048) | Where to POST each matching event |
+| `secret` | varchar(255) | The HMAC-SHA256 key signing each delivery; shown in full only in the create response |
+| `event_types` | varchar(255), nullable | Comma-separated `AlertStatus` values to receive; null/empty means every type |
+| `active` | boolean | Deactivated subscriptions are skipped by fan-out, not deleted |
+| `created_at` | timestamptz | When the subscription was created |
+
+## `webhook_delivery`
+
+One (outbox event, subscription) delivery attempt that existed when that
+event was fanned out. Independent of every other delivery for the same
+event, so one slow or failing endpoint never blocks or delays another
+subscriber.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | bigint, generated | Internal identifier |
+| `outbox_event_id` | bigint | The event being delivered (deleted with it) |
+| `subscription_id` | bigint | The subscription receiving it (deleted with it) |
+| `status` | varchar(16) | `PENDING`, `SENDING`, `DELIVERED` or `DEAD_LETTERED` |
+| `attempts` | int | How many send attempts have failed so far |
+| `next_attempt_at` | timestamptz | When this row next becomes claimable — now, if `PENDING`, or after the current backoff |
+| `last_error` | text, nullable | The most recent failure, if any |
+| `created_at` / `updated_at` | timestamptz | When the row was created / last changed |
+
+Unique on (`outbox_event_id`, `subscription_id`): defense in depth against a
+double fan-out ever creating two delivery rows for the same pair, though the
+fan-out transaction's own atomicity is what actually prevents that.
+
+## `shedlock`
+
+Not application data — the lock ShedLock uses so a scheduled job runs on
+only one instance at a time (`net.javacrumbs.shedlock`'s own schema).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | varchar(64), primary key | The lock's name (`dhis2-sync`, `outbox-fanout` or `webhook-dispatch`) |
 | `lock_until` | timestamptz | When the lock expires if not released sooner |
 | `locked_at` | timestamptz | When the current holder acquired it |
 | `locked_by` | varchar(255) | Hostname of the instance holding it |

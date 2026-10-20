@@ -65,3 +65,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/keycloak.md`.
 - Interactive OpenAPI/Swagger UI docs (springdoc), with the bearer scheme
   documented.
+- A transactional outbox (`outbox_event`): one row per alert status change,
+  written in the same transaction as the change itself, so a notification can
+  never be lost for a change that committed, nor sent for one that rolled
+  back.
+- A two-stage notification pipeline, both stages claiming their work with
+  `SELECT ... FOR UPDATE SKIP LOCKED` in small batches so multiple instances
+  never double-claim a row: a fan-out poller turns each outbox event into a
+  `webhook_delivery` row per active, matching subscription and (if enabled)
+  one email; a dispatch poller sends each delivery's signed HTTP POST.
+- Webhooks: HMAC-SHA256-signed payloads (`X-Signature`, with a timestamp to
+  allow replay rejection) carrying a stable `X-Event-Id` for receiver-side
+  deduplication, since delivery is at-least-once, not exactly-once. Exponential
+  backoff on failure, then a `DEAD_LETTERED` status after a configured number
+  of attempts, visible through `GET /api/v1/webhook-deliveries`.
+- `webhook_subscription` CRUD (`/api/v1/webhook-subscriptions`, admin-only): an
+  optional per-subscription event-type filter, and a server-generated secret
+  if none is supplied, shown once in the create response only.
+- Email notifications (Spring Mail to Mailpit in dev): a plain-text message
+  per event, sent best-effort after an event's deliveries are fanned out — no
+  persisted retry or dead-letter state, unlike webhooks.
+- A Mailpit service in `docker-compose.yml` for viewing sent mail locally at
+  `http://localhost:8025`.

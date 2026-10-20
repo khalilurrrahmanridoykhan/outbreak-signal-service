@@ -18,7 +18,8 @@ public record OutbreakProperties(
         @Valid @DefaultValue Sync sync,
         @Valid Dhis2 dhis2,
         @Valid @DefaultValue Detection detection,
-        @Valid @DefaultValue Security security) {
+        @Valid @DefaultValue Security security,
+        @Valid @DefaultValue Notification notification) {
 
     /**
      * Settings for pulling data from the source system.
@@ -129,5 +130,59 @@ public record OutbreakProperties(
      * @param jwkSetUri where to fetch the signing keys used to verify a JWT
      */
     public record Security(@DefaultValue("http://localhost:8081/realms/outbreak-signal/protocol/openid-connect/certs") @NotBlank String jwkSetUri) {
+    }
+
+    /**
+     * The transactional outbox's two pollers and the email channel. Both
+     * pollers run on their own schedule under a ShedLock lock, each in small
+     * batches claimed with {@code SELECT ... FOR UPDATE SKIP LOCKED} so
+     * multiple instances never double-claim a row.
+     */
+    public record Notification(
+            @Valid @DefaultValue Outbox outbox,
+            @Valid @DefaultValue Webhook webhook,
+            @Valid @DefaultValue Email email) {
+
+        /**
+         * @param pollIntervalMs how often the fan-out poller runs
+         * @param batchSize how many outbox rows one poll claims at once
+         */
+        public record Outbox(
+                @DefaultValue("5000") @Min(500) long pollIntervalMs,
+                @DefaultValue("20") @Min(1) @Max(500) int batchSize) {
+        }
+
+        /**
+         * @param pollIntervalMs how often the webhook dispatcher runs
+         * @param batchSize how many deliveries one poll claims at once
+         * @param maxAttempts attempts before a delivery is dead-lettered
+         * @param initialBackoffMs the first retry's delay
+         * @param backoffMultiplier how much each subsequent retry's delay grows by
+         * @param staleSendingTimeoutMs how long a row may sit {@code SENDING} before
+         *     it is treated as abandoned (the instance that claimed it crashed
+         *     mid-send) and reclaimed by the next poll
+         * @param requestTimeoutMs how long one HTTP delivery attempt may take
+         */
+        public record Webhook(
+                @DefaultValue("5000") @Min(500) long pollIntervalMs,
+                @DefaultValue("20") @Min(1) @Max(500) int batchSize,
+                @DefaultValue("5") @Min(1) @Max(20) int maxAttempts,
+                @DefaultValue("10000") @Min(100) long initialBackoffMs,
+                @DefaultValue("3.0") @DecimalMin("1.0") double backoffMultiplier,
+                @DefaultValue("300000") @Min(1000) long staleSendingTimeoutMs,
+                @DefaultValue("10000") @Min(100) long requestTimeoutMs) {
+        }
+
+        /**
+         * @param enabled whether to email the recipient below on every event (off
+         *     by default: not every deployment has an SMTP server configured)
+         * @param to who receives the notification
+         * @param from the sending address
+         */
+        public record Email(
+                @DefaultValue("false") boolean enabled,
+                @DefaultValue("ops@example.org") @NotBlank String to,
+                @DefaultValue("outbreak-signal@example.org") @NotBlank String from) {
+        }
     }
 }

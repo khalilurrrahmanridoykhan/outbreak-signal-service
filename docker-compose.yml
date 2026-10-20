@@ -15,6 +15,15 @@ services:
       timeout: 3s
       retries: 10
 
+  # SMTP test server for local development: accepts any mail, no auth, and
+  # shows what was sent at http://localhost:8025 instead of delivering it
+  # anywhere real. See AlertEmailNotifier and outbreak.notification.email.*.
+  mail:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
   app:
     build: .
     depends_on:
@@ -24,6 +33,9 @@ services:
       DB_URL: jdbc:postgresql://db:5432/outbreaksignal
       DB_USERNAME: outbreak
       DB_PASSWORD: outbreak
+      MAIL_HOST: mail
+      MAIL_PORT: 1025
+      OUTBREAK_NOTIFICATION_EMAIL_ENABLED: "true"
       # Only resolves when the keycloak profile is also running; harmless
       # otherwise (JwtDecoder construction never contacts it — see
       # JwtDecoderConfig), since compose's internal DNS simply won't

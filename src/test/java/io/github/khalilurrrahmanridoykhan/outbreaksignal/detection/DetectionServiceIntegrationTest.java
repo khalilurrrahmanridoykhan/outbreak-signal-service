@@ -3,6 +3,7 @@ package io.github.khalilurrrahmanridoykhan.outbreaksignal.detection;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.TestcontainersConfiguration;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.OutboxEventRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Observation;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.ObservationRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
@@ -45,6 +46,8 @@ class DetectionServiceIntegrationTest {
     private DetectionRunRepository detectionRuns;
     @Autowired
     private AlertRepository alerts;
+    @Autowired
+    private OutboxEventRepository outboxEvents;
 
     private Series series;
 
@@ -97,12 +100,17 @@ class DetectionServiceIntegrationTest {
             // The rise starts at week index 12; nothing before it should ever alarm.
             assertThat(alert.getPeriodStart()).isAfterOrEqualTo(FIRST_MONDAY.plusWeeks(12));
         });
+
+        // One outbox row per new alert, written in the same transaction as
+        // the alert itself — see AlertEventPublisher.
+        assertThat(outboxEvents.count()).isEqualTo(stored.size());
     }
 
     @Test
-    void runningDetectionTwiceCreatesNoSecondRoundOfAlerts() {
+    void runningDetectionTwiceCreatesNoSecondRoundOfAlertsOrOutboxEvents() {
         detectionService.runDetection();
         int alertsAfterFirstRun = alerts.findAll().size();
+        long outboxEventsAfterFirstRun = outboxEvents.count();
 
         DetectionSummary second = detectionService.runDetection();
 
@@ -110,5 +118,6 @@ class DetectionServiceIntegrationTest {
         // The second run still evaluates everything; it just creates nothing new.
         assertThat(second.runs()).allSatisfy(run -> assertThat(run.alertsCreated()).isZero());
         assertThat(detectionRuns.findAll()).hasSize(10); // 5 strategies x 2 runs; every run is still recorded
+        assertThat(outboxEvents.count()).isEqualTo(outboxEventsAfterFirstRun);
     }
 }
