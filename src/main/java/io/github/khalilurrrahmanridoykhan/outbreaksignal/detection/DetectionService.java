@@ -2,6 +2,8 @@ package io.github.khalilurrrahmanridoykhan.outbreaksignal.detection;
 
 import tools.jackson.databind.ObjectMapper;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.config.OutbreakProperties;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPayload;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPublisher;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Observation;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.ObservationRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
@@ -36,6 +38,7 @@ public class DetectionService {
     private final ObservationRepository observationRepository;
     private final DetectionRunRepository detectionRunRepository;
     private final AlertRepository alertRepository;
+    private final AlertEventPublisher outbox;
     private final OutbreakProperties properties;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -46,6 +49,7 @@ public class DetectionService {
             ObservationRepository observationRepository,
             DetectionRunRepository detectionRunRepository,
             AlertRepository alertRepository,
+            AlertEventPublisher outbox,
             OutbreakProperties properties,
             ObjectMapper objectMapper,
             Clock clock) {
@@ -54,6 +58,7 @@ public class DetectionService {
         this.observationRepository = observationRepository;
         this.detectionRunRepository = detectionRunRepository;
         this.alertRepository = alertRepository;
+        this.outbox = outbox;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -108,7 +113,8 @@ public class DetectionService {
             return false;
         }
         Severity severity = Severity.fromScoreOverThreshold(point.score(), point.threshold());
-        alertRepository.save(new Alert(
+        Instant now = clock.instant();
+        Alert saved = alertRepository.save(new Alert(
                 series,
                 point.weekStart(),
                 strategy.id(),
@@ -116,7 +122,8 @@ public class DetectionService {
                 BigDecimal.valueOf(point.threshold()),
                 severity,
                 run,
-                clock.instant()));
+                now));
+        outbox.publish(AlertEventPayload.from(AlertSummary.from(saved), null, null), now);
         return true;
     }
 

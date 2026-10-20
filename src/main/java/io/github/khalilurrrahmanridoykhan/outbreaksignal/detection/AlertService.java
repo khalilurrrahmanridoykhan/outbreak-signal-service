@@ -1,6 +1,9 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.detection;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPayload;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPublisher;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -29,11 +32,13 @@ public class AlertService {
 
     private final AlertRepository alerts;
     private final AlertEventRepository events;
+    private final AlertEventPublisher outbox;
     private final Clock clock;
 
-    AlertService(AlertRepository alerts, AlertEventRepository events, Clock clock) {
+    AlertService(AlertRepository alerts, AlertEventRepository events, AlertEventPublisher outbox, Clock clock) {
         this.alerts = alerts;
         this.events = events;
+        this.outbox = outbox;
         this.clock = clock;
     }
 
@@ -77,7 +82,9 @@ public class AlertService {
         Alert alert = find(id);
         AlertStatus from = alert.transitionTo(to);
         Alert saved = alerts.saveAndFlush(alert);
-        events.save(new AlertEvent(saved, from, to, note, actor, clock.instant()));
+        Instant now = clock.instant();
+        events.save(new AlertEvent(saved, from, to, note, actor, now));
+        outbox.publish(AlertEventPayload.from(AlertSummary.from(saved), note, actor), now);
         return saved;
     }
 }
