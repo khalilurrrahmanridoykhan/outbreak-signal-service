@@ -26,7 +26,7 @@ is not implemented yet.
 | 2 | DHIS2 client and idempotent sync | **Done** |
 | 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | **Done** |
 | 4 | Alerts API with lifecycle and JWT security | **Done** |
-| 5 | Notifications: signed webhooks and email via a transactional outbox | Planned |
+| 5 | Notifications: signed webhooks and email via a transactional outbox | **Done** |
 | 6 | FHIR output (`DetectedIssue`, read-only) | Planned |
 | 7 | Observability, packaging, `v0.1.0` release | Planned |
 
@@ -69,6 +69,15 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   `ADMIN`. Interactive API docs at `/swagger-ui/index.html`. See
   [docs/keycloak.md](docs/keycloak.md) to try it with a real token from the
   optional local Keycloak.
+- A transactional outbox: every alert status change writes an `outbox_event`
+  row in the same transaction as the change itself, fanned out by a poller
+  (claiming batches with `SELECT ... FOR UPDATE SKIP LOCKED`, so multiple
+  instances never double-claim a row) into a signed webhook delivery per
+  active, matching subscription, plus a best-effort email. Webhook delivery
+  is at-least-once with retry/backoff and a `DEAD_LETTERED` status after the
+  configured attempt limit, visible through the API —
+  `webhook_subscription` CRUD at `/api/v1/webhook-subscriptions` (admin-only)
+  and delivery visibility at `/api/v1/webhook-deliveries`.
 
 ## Quickstart
 
@@ -89,6 +98,10 @@ curl http://localhost:8080/actuator/health
 
 Stop it with `Ctrl+C`, and remove the database volume with
 `docker compose down -v`.
+
+`docker compose up` also starts [Mailpit](https://mailpit.axllent.net/), a
+local SMTP test server, with every alert event's notification email visible
+at `http://localhost:8025` — nothing is ever sent anywhere real.
 
 The Compose file uses fixed local-development credentials. Do not reuse them
 anywhere real.
@@ -138,6 +151,16 @@ curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/alerts/83/d
 # A series and its weekly values
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/series
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/series/1/observations
+
+# Register a webhook (ADMIN only); the response's "secret" is shown once —
+# store it, it is needed to verify X-Signature on every delivery
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/webhook-subscriptions \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.org/hooks/outbreak-signal"}'
+
+# Delivery attempts, including dead-lettered ones (ANALYST or ADMIN)
+curl -H "Authorization: Bearer $TOKEN" \
+  "localhost:8080/api/v1/webhook-deliveries?status=DEAD_LETTERED"
 ```
 
 An illegal move (resolving an alert that was never acknowledged) returns
@@ -160,19 +183,22 @@ DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
                        alert service (state machine, audit trail)   ◀── done
                                      │  same transaction
                                      ▼
-                                transactional outbox                ◀── Phase 5
-                                     ├──▶ signed webhooks
-                                     └──▶ email
+                                transactional outbox                ◀── done
+                                     │  fan-out poller (SKIP LOCKED)
+                                     ├──▶ webhook_delivery ──▶ signed webhooks
+                                     │      (dispatch poller, SKIP LOCKED,
+                                     │       retry/backoff/dead-letter)
+                                     └──▶ email (best-effort)
 
 REST /api/v1/**  (JWT, roles)  ◀── done     FHIR /fhir/DetectedIssue (Phase 6)
 ```
 
-Everything except the transactional outbox and FHIR output exists so far.
-Every alert transition (`acknowledge`/`resolve`/`dismiss`) is enforced by an
-explicit state machine and writes an append-only `alert_event` in the same
-transaction as the status change; optimistic locking (`@Version`) means a
-stale concurrent review fails with `409` rather than silently losing the
-other reviewer's change. The reasoning behind each choice is recorded in
+Everything except FHIR output exists so far. Every alert transition
+(`acknowledge`/`resolve`/`dismiss`) is enforced by an explicit state machine
+and writes an append-only `alert_event` in the same transaction as the
+status change; optimistic locking (`@Version`) means a stale concurrent
+review fails with `409` rather than silently losing the other reviewer's
+change. The reasoning behind each choice is recorded in
 [DECISIONS.md](DECISIONS.md).
 
 ## Configuration
@@ -191,6 +217,11 @@ other reviewer's change. The reasoning behind each choice is recorded in
 | `outbreak.detection.ears.baseline-weeks` / `.threshold` | `OUTBREAK_DETECTION_EARS_*` | `7` / `3.0` | Shared by EARS C1, C2 and C3 (C2's 2-week guard band is fixed, not configurable) |
 | `outbreak.detection.cusum.baseline-weeks` / `.reference-k-sigma` / `.threshold-h-sigma` | `OUTBREAK_DETECTION_CUSUM_*` | `8` / `0.5` / `5.0` | CUSUM's reference window and its slack/threshold, in standard deviations |
 | `outbreak.security.jwk-set-uri` | `OUTBREAK_SECURITY_JWK_SET_URI` | the optional local Keycloak's JWK endpoint | Where to validate incoming JWTs' signatures against |
+| `outbreak.notification.outbox.poll-interval-ms` / `.batch-size` | `OUTBREAK_NOTIFICATION_OUTBOX_*` | `5000` / `20` | How often the fan-out poller runs, and its batch size |
+| `outbreak.notification.webhook.poll-interval-ms` / `.batch-size` | `OUTBREAK_NOTIFICATION_WEBHOOK_*` | `5000` / `20` | How often the dispatch poller runs, and its batch size |
+| `outbreak.notification.webhook.max-attempts` | `OUTBREAK_NOTIFICATION_WEBHOOK_MAX_ATTEMPTS` | `5` | Attempts before a delivery is dead-lettered |
+| `outbreak.notification.webhook.initial-backoff-ms` / `.backoff-multiplier` | `OUTBREAK_NOTIFICATION_WEBHOOK_*` | `10000` / `3.0` | The first retry's delay, and how much each later one grows by |
+| `outbreak.notification.email.enabled` / `.to` / `.from` | `OUTBREAK_NOTIFICATION_EMAIL_*` | `false` (`true` in `docker-compose.yml`) / `ops@example.org` / `outbreak-signal@example.org` | Whether to email a fixed recipient on every event |
 
 The data elements synced (`outbreak.dhis2.data-elements`) are a list in
 `application.yml`, not single environment variables; override the whole list
@@ -237,6 +268,7 @@ src/main/java/.../outbreaksignal
   ├── observation/   organisation units, series, observations, repositories
   ├── datasource/    DhisClient/DhisWebClient, Dhis2SyncService, scheduling
   ├── detection/     strategies, DetectionService, alert lifecycle + REST API
+  ├── notification/  transactional outbox, webhook dispatch, email, REST API
   ├── security/      OAuth2 resource server, role mapping, OpenAPI
   ├── config/        typed, validated application settings
   └── common/        error model (RFC 9457), EpiWeek

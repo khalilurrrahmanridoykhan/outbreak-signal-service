@@ -352,3 +352,49 @@ with an inline `codeql[java/spring-disabled-csrf-protection]` comment and the
 corresponding alert dismissed as a false positive, both with this same
 reasoning, rather than either leaving the PR blocked or "fixing" it by adding
 CSRF protection a stateless bearer-token API gets no benefit from.
+
+## 33. `webhook_delivery` rows use plain `Long` foreign keys, not JPA associations
+
+`WebhookDelivery.outboxEventId`/`subscriptionId` are columns, not
+`@ManyToOne` fields to `OutboxEvent`/`WebhookSubscription`. The dispatcher
+claims a batch, then sends every HTTP call *outside* any database
+transaction — a slow or hanging endpoint must never hold a transaction open
+— so nothing it reads can be a lazy association evaluated after that
+transaction already closed. That is exactly the shape of the Phase 4 bug
+(`DECISIONS.md` #29): rather than relying on discipline to never touch a
+lazy field at the wrong time, the entity simply does not have one to touch.
+Everything a delivery attempt needs (`url`, `secret`, the envelope body) is
+resolved into a plain `WebhookDispatchJob` record inside the claiming
+transaction, before the network call.
+
+## 34. The outbox and webhook dispatch pollers are two methods, not one
+
+`OutboxFanoutScheduler`/`WebhookDispatchScheduler` each split into a
+`@Scheduled @SchedulerLock`-guarded `poll()` and a plain, lock-free method
+(`fanOutAndNotify`/`dispatchDueDeliveries`) that `poll()` just calls.
+Discovered the hard way: `@SchedulerLock`'s `lockAtLeastFor` holds its lock
+for a real wall-clock duration after acquisition, regardless of this
+project's own fake `Clock` used everywhere else to make tests deterministic.
+A test calling `poll()` directly a second time — to simulate the next
+scheduled tick, the normal way this project tests `@Scheduled` work — found
+the lock still "held" and silently skipped the method body entirely, with no
+exception and no log: `WebhookDispatchIntegrationTest`'s retry-then-dead-letter
+test saw every call after the first do nothing, which looked identical to a
+real claim-query bug until adding a print statement at the very top of
+`poll()` showed the method was never being entered at all. The lock-free
+method is what tests call directly; `poll()` exists only so the real
+scheduled trigger still goes through ShedLock in production.
+
+## 35. Email has no persisted retry or dead-letter state; webhooks do
+
+`AlertEmailNotifier` sends once, best-effort, logging and swallowing any
+failure, right after `OutboxFanoutScheduler` commits that batch's fan-out.
+This is a deliberate asymmetry with `WebhookDelivery`'s full
+claim/retry/backoff/dead-letter lifecycle, not an oversight: the plan asks
+for retry-with-backoff-then-dead-letter visible through the API specifically
+for webhooks, and only "a simple text/HTML template" for email. Building the
+same persisted-delivery machinery for email would be solving a problem
+nobody asked this phase to solve, at the cost of a second
+`*_delivery` table and poller for a channel the plan treats as a
+secondary, operational nicety rather than an integration contract a
+receiver's business logic depends on the way a webhook subscriber's might.
