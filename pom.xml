@@ -38,6 +38,7 @@
     <resilience4j.version>2.4.0</resilience4j.version>
     <shedlock.version>7.10.1</shedlock.version>
     <wiremock.version>3.13.2</wiremock.version>
+    <greenmail.version>2.1.9</greenmail.version>
     <!-- Default test exclusion; override to run the opt-in "live" tests:
          ./mvnw test -DexcludedGroups= -Dgroups=live -->
     <excludedGroups>live</excludedGroups>
@@ -96,6 +97,10 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springdoc</groupId>
@@ -200,6 +205,15 @@
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>
       <version>1.5.1</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- An in-memory SMTP server for the one integration test that proves
+         AlertEmailNotifier actually sends mail, rather than mocking
+         JavaMailSender everywhere; targets Jakarta Mail, matching Boot 4. -->
+    <dependency>
+      <groupId>com.icegreen</groupId>
+      <artifactId>greenmail-junit5</artifactId>
+      <version>${greenmail.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
