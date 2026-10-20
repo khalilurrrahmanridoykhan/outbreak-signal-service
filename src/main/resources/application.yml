@@ -15,6 +15,13 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  mail:
+    # Defaults match docker-compose.yml's Mailpit service; Mailpit accepts
+    # any mail with no auth, so there is nothing to configure beyond host
+    # and port for local development. A real deployment overrides these with
+    # its own SMTP relay (and outbreak.notification.email.enabled=true).
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
 
 outbreak:
   sync:
@@ -64,6 +71,24 @@ outbreak:
     # eagerly, so the app starts fine even when that profile is not running;
     # override for a real deployment's own identity provider.
     jwk-set-uri: ${OUTBREAK_SECURITY_JWK_SET_URI:http://localhost:8081/realms/outbreak-signal/protocol/openid-connect/certs}
+  notification:
+    outbox:
+      poll-interval-ms: ${OUTBREAK_NOTIFICATION_OUTBOX_POLL_INTERVAL_MS:5000}
+      batch-size: ${OUTBREAK_NOTIFICATION_OUTBOX_BATCH_SIZE:20}
+    webhook:
+      poll-interval-ms: ${OUTBREAK_NOTIFICATION_WEBHOOK_POLL_INTERVAL_MS:5000}
+      batch-size: ${OUTBREAK_NOTIFICATION_WEBHOOK_BATCH_SIZE:20}
+      max-attempts: ${OUTBREAK_NOTIFICATION_WEBHOOK_MAX_ATTEMPTS:5}
+      initial-backoff-ms: ${OUTBREAK_NOTIFICATION_WEBHOOK_INITIAL_BACKOFF_MS:10000}
+      backoff-multiplier: ${OUTBREAK_NOTIFICATION_WEBHOOK_BACKOFF_MULTIPLIER:3.0}
+      stale-sending-timeout-ms: ${OUTBREAK_NOTIFICATION_WEBHOOK_STALE_SENDING_TIMEOUT_MS:300000}
+      request-timeout-ms: ${OUTBREAK_NOTIFICATION_WEBHOOK_REQUEST_TIMEOUT_MS:10000}
+    email:
+      # Off by default: a fresh clone's Mailpit is reachable, but a real
+      # deployment must opt in deliberately once real recipients are set.
+      enabled: ${OUTBREAK_NOTIFICATION_EMAIL_ENABLED:false}
+      to: ${OUTBREAK_NOTIFICATION_EMAIL_TO:ops@example.org}
+      from: ${OUTBREAK_NOTIFICATION_EMAIL_FROM:outbreak-signal@example.org}
 
 management:
   endpoints:
