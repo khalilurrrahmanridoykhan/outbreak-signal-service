@@ -13,8 +13,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code @Order(HIGHEST_PRECEDENCE)} — without it, an unrelated
  * {@code @ControllerAdvice} with a broad catch-all handler can shadow this
  * one's more specific handlers entirely, regardless of how specific they are.
+ *
+ * <p>Scoped to this package's own controllers ({@code basePackages}): the
+ * {@code fhir} package reuses {@link AlertNotFoundException} but needs a
+ * {@code 404} that is itself a valid FHIR resource ({@code OperationOutcome},
+ * not {@code ProblemDetail}) — see {@code fhir.FhirExceptionHandler}. Without
+ * this restriction, two {@code HIGHEST_PRECEDENCE} advices would both be
+ * "applicable" to a {@code fhir} controller throwing that exception, and
+ * which one actually won would depend on registration order rather than
+ * being deterministic.
  */
-@RestControllerAdvice
+@RestControllerAdvice(basePackages = "io.github.khalilurrrahmanridoykhan.outbreaksignal.detection")
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class AlertExceptionHandler {
 

@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.fhir.FhirConfig;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.security.SecurityConfig;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,8 +20,12 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+// FhirConfig is imported because @WebMvcTest auto-detects every
+// HttpMessageConverter bean application-wide (the same way it always
+// auto-detects WebMvcConfigurer beans), regardless of which controller is
+// under test — FhirJsonHttpMessageConverter needs a FhirContext even here.
 @WebMvcTest(controllers = Dhis2SyncController.class)
-@Import({SecurityConfig.class, Dhis2SyncControllerTest.StubJwtBeans.class})
+@Import({SecurityConfig.class, FhirConfig.class, Dhis2SyncControllerTest.StubJwtBeans.class})
 class Dhis2SyncControllerTest {
 
     @Autowired

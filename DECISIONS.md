@@ -398,3 +398,83 @@ nobody asked this phase to solve, at the cost of a second
 `*_delivery` table and poller for a channel the plan treats as a
 secondary, operational nicety rather than an integration contract a
 receiver's business logic depends on the way a webhook subscriber's might.
+
+## 36. `AlertStatusFhirMapping` is bijective, not the "natural" two-state split
+
+`DetectedIssue.status` could read, at first glance, as "`preliminary`
+while under review, `final`/`cancelled` once review concludes" — which
+would merge `OPEN` and `ACKNOWLEDGED` onto the same FHIR code. Chose a
+bijective mapping instead (`OPEN`→`registered`, `ACKNOWLEDGED`→`preliminary`,
+`RESOLVED`→`final`, `DISMISSED`→`cancelled`): every `AlertStatus` has
+exactly one `DetectedIssueStatus` and back, which is what lets a FHIR
+`status` search parameter translate to exactly one `AlertStatus` and reuse
+`AlertRepository.search` unchanged. A many-to-one mapping would have forced
+either an in-memory filter across every alert (no database-level
+pagination) or a second query shape that exists only for FHIR search. See
+`docs/fhir-mapping.md` for the full table.
+
+## 37. FHIR errors are `OperationOutcome`, not the REST API's `ProblemDetail` — which required scoping every advice to its own package
+
+A FHIR client expects a FHIR resource in every response, including
+failures. `fhir.FhirExceptionHandler` returns `OperationOutcome` for the
+same `AlertNotFoundException` `detection.AlertExceptionHandler` already
+maps to a `ProblemDetail`. Both were `@Order(HIGHEST_PRECEDENCE)` with no
+`basePackages` restriction, which made them equally "applicable" to a
+`fhir` controller throwing that exception — a resolution that would have
+depended on registration order, exactly the shadowing bug class Phase 4
+already hit once (#28) and fixed with ordering alone, which was not enough
+here since both advices sat at the *same* order.
+
+Fixed by scoping every package-specific `@RestControllerAdvice` to its own
+package's controllers (`basePackages = "...outbreaksignal.<package>"`):
+`detection.AlertExceptionHandler`, `notification.NotificationExceptionHandler`,
+`observation.ObservationExceptionHandler`, and the new
+`fhir.FhirExceptionHandler`. `common.ApiExceptionHandler` stays unscoped and
+`LOWEST_PRECEDENCE`, so it remains the fallback for whatever a package's own
+advice does not cover, for every controller. This is a more general fix than
+ordering alone: two `HIGHEST_PRECEDENCE` advices can now coexist safely as
+long as their controllers never overlap, which no amount of reordering could
+have guaranteed.
+
+## 38. A real `AlertRepository.search` bug, found only once a real date-range filter ran against real PostgreSQL
+
+Building `FhirAlertService.search`'s `identified` filter — the first caller
+ever to pass a non-null `from`/`to` to `AlertRepository.search` against a
+real database (every existing test passed all five filter parameters as
+null) — surfaced `could not determine data type of parameter $7` from
+PostgreSQL. The query's `(:from IS NULL OR a.periodStart >= :from)` pattern
+expands `:from` into two separate JDBC parameters; the one inside `IS NULL`
+has no type-inferable context of its own (`x IS NULL` holds for any type),
+and Hibernate 7.4.5 did not propagate the type it correctly infers from the
+*other* occurrence to this one.
+
+Fixed by rewriting all five filters as `a.column = COALESCE(:param,
+a.column)`: each named parameter now appears exactly once, always beside a
+column of known type, so PostgreSQL always has something to infer from.
+Same filtering semantics (a null parameter matches everything for that
+column), same "plain nullable-parameter JPQL" style the query's own
+preceding comment already commits to — just immune to this class of error.
+No test had exercised this combination before; `FhirAlertServiceIntegrationTest`
+now does.
+
+## 39. `@WebMvcTest` auto-detects every `HttpMessageConverter` bean, application-wide
+
+Adding `FhirJsonHttpMessageConverter` broke every *existing* `@WebMvcTest`
+in the project (`AlertControllerTest`, `SeriesControllerTest`,
+`DetectionControllerTest`, `Dhis2SyncControllerTest`,
+`ApiExceptionHandlerTest`) — `could not autowire FhirContext`, from
+converter beans none of those tests have anything to do with. `@WebMvcTest`
+auto-detects every `HttpMessageConverter` (and `WebMvcConfigurer`) bean
+application-wide regardless of the `controllers` attribute, the same way it
+always has for `Converter`/`GenericConverter`/`Filter` beans — this is
+documented Spring Boot test-slicing behaviour, not a bug, but it meant a
+converter added for one package's controller now had to be satisfiable in
+every other package's slice test too.
+
+Fixed by making `FhirConfig` (the lone `FhirContext` bean) `public` and
+explicitly importing it into every affected `@WebMvcTest`, the same way
+each already imports `SecurityConfig` explicitly rather than relying on it
+being picked up implicitly — consistent with this project's existing
+"every test declares what it needs" style, rather than introducing this
+project's first Spring Boot auto-configuration just to paper over one
+converter.

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.fhir.FhirConfig;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.security.SecurityConfig;
@@ -36,9 +37,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * actually invoked: {@code jwt()} post-processors build the authenticated
  * principal directly, bypassing decoding entirely, matching the plan's own
  * "spring-security-test JWT post-processors so CI needs no Keycloak."
+ *
+ * <p>{@code FhirConfig} is imported because {@code @WebMvcTest} auto-detects
+ * every {@code HttpMessageConverter} bean application-wide, regardless of
+ * which controller is under test — {@code FhirJsonHttpMessageConverter}
+ * needs a {@code FhirContext} even here.
  */
 @WebMvcTest(controllers = AlertController.class)
-@Import({AlertExceptionHandler.class, SecurityConfig.class, AlertControllerTest.StubJwtBeans.class})
+@Import({AlertExceptionHandler.class, SecurityConfig.class, FhirConfig.class, AlertControllerTest.StubJwtBeans.class})
 class AlertControllerTest {
 
     private static final LocalDate MONDAY = LocalDate.of(2026, 1, 5);

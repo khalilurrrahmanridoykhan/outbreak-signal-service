@@ -30,6 +30,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // A CapabilityStatement is meant to be publicly discoverable —
+                        // it describes what this server can do, not alert data itself,
+                        // the same reasoning as the two matchers above.
+                        .requestMatchers("/fhir/metadata").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
                         .decoder(jwtDecoder)

@@ -11,9 +11,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * See {@code detection.AlertExceptionHandler} for why this needs
  * {@code @Order(HIGHEST_PRECEDENCE)}: without it, the generic
  * {@code ApiExceptionHandler}'s catch-all can shadow this package's own,
- * more specific handler.
+ * more specific handler. Scoped to this package's own controllers for the
+ * same reason every package-specific advice now is: see that same javadoc.
  */
-@RestControllerAdvice
+@RestControllerAdvice(basePackages = "io.github.khalilurrrahmanridoykhan.outbreaksignal.notification")
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class NotificationExceptionHandler {
 

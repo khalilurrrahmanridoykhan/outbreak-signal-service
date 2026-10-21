@@ -39,6 +39,7 @@
     <shedlock.version>7.10.1</shedlock.version>
     <wiremock.version>3.13.2</wiremock.version>
     <greenmail.version>2.1.9</greenmail.version>
+    <hapi-fhir.version>8.12.1</hapi-fhir.version>
     <!-- Default test exclusion; override to run the opt-in "live" tests:
          ./mvnw test -DexcludedGroups= -Dgroups=live -->
     <excludedGroups>live</excludedGroups>
@@ -101,6 +102,20 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
+
+    <!-- HAPI FHIR as a library (R4 structures only): mapping and
+         serialising DetectedIssue/Bundle/CapabilityStatement, not running a
+         second (HAPI JPA) persistence layer. Ships its own complete FHIR
+         JSON (de)serialisation via FhirContext, entirely independent of the
+         Jackson 3 ObjectMapper Spring Boot 4.1 otherwise uses — the two
+         never interact, so the classic Jackson 2.x this pulls in
+         transitively coexists with Jackson 3 (different packages) rather
+         than conflicting with it. -->
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-structures-r4</artifactId>
+      <version>${hapi-fhir.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springdoc</groupId>
@@ -214,6 +229,29 @@
       <groupId>com.icegreen</groupId>
       <artifactId>greenmail-junit5</artifactId>
       <version>${greenmail.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- FhirInstanceValidator: validates every produced resource against
+         the base R4 profile in tests only — not needed at runtime, since
+         this service never accepts a FHIR resource as input. -->
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-validation</artifactId>
+      <version>${hapi-fhir.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-validation-resources-r4</artifactId>
+      <version>${hapi-fhir.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- ValidationSupportChain needs a cache provider at runtime; HAPI picks
+         one via SPI, so one must actually be on the classpath. -->
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-caching-caffeine</artifactId>
+      <version>${hapi-fhir.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

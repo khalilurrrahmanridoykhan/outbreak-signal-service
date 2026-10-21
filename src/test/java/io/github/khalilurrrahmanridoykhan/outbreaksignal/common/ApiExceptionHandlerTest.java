@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.fhir.FhirConfig;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
@@ -21,8 +22,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+// FhirConfig is imported because @WebMvcTest auto-detects every
+// HttpMessageConverter bean application-wide, regardless of which
+// controller is under test — FhirJsonHttpMessageConverter needs a
+// FhirContext even here.
 @WebMvcTest(controllers = ApiExceptionHandlerTest.Probe.class)
-@Import({ApiExceptionHandler.class, ApiExceptionHandlerTest.Probe.class})
+@Import({ApiExceptionHandler.class, FhirConfig.class, ApiExceptionHandlerTest.Probe.class})
 class ApiExceptionHandlerTest {
 
     @Autowired
