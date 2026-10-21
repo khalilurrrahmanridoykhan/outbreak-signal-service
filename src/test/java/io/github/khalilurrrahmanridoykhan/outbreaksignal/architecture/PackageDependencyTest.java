@@ -45,4 +45,21 @@ class PackageDependencyTest {
 
         rule.check(CLASSES);
     }
+
+    /**
+     * The plan's own architecture section states this one by name: FHIR
+     * output is a read-only view over alert data, never a second channel
+     * that notifications also feed through. {@code fhir} reads alert data
+     * through {@code AlertService}/{@code AlertSummary} — the same
+     * already-resolved DTO {@code notification} reuses — so it has no
+     * reason to depend on {@code datasource} or {@code observation} either.
+     */
+    @Test
+    void fhirMustNotDependOnNotificationDatasourceOrObservation() {
+        ArchRule rule = noClasses().that().resideInAPackage(BASE_PACKAGE + ".fhir..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        BASE_PACKAGE + ".notification..", BASE_PACKAGE + ".datasource..", BASE_PACKAGE + ".observation..");
+
+        rule.check(CLASSES);
+    }
 }
