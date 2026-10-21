@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.fhir.FhirConfig;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +24,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * Also what caught {@code ObservationExceptionHandler}'s own version of the
  * advice-ordering bug fixed via {@code AlertControllerTest} — before that
  * fix, {@code SeriesNotFoundException} resolved to a generic 500 here too.
+ *
+ * <p>{@code FhirConfig} is imported because {@code @WebMvcTest} auto-detects
+ * every {@code HttpMessageConverter} bean application-wide, regardless of
+ * which controller is under test — {@code FhirJsonHttpMessageConverter}
+ * needs a {@code FhirContext} even here.
  */
 @WebMvcTest(controllers = SeriesController.class)
-@Import({ObservationExceptionHandler.class, SecurityConfig.class, SeriesControllerTest.StubJwtBeans.class})
+@Import({ObservationExceptionHandler.class, SecurityConfig.class, FhirConfig.class, SeriesControllerTest.StubJwtBeans.class})
 class SeriesControllerTest {
 
     @Autowired
