@@ -27,7 +27,7 @@ is not implemented yet.
 | 3 | Detection engine (moving-average z, EARS C1-C3, CUSUM) and backtest | **Done** |
 | 4 | Alerts API with lifecycle and JWT security | **Done** |
 | 5 | Notifications: signed webhooks and email via a transactional outbox | **Done** |
-| 6 | FHIR output (`DetectedIssue`, read-only) | Planned |
+| 6 | FHIR output (`DetectedIssue`, read-only) | **Done** |
 | 7 | Observability, packaging, `v0.1.0` release | Planned |
 
 Progress is tracked through the milestones and issues of this repository, and
@@ -78,6 +78,13 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   configured attempt limit, visible through the API —
   `webhook_subscription` CRUD at `/api/v1/webhook-subscriptions` (admin-only)
   and delivery visibility at `/api/v1/webhook-deliveries`.
+- Read-only FHIR output: every alert maps to a `DetectedIssue` at
+  `GET /fhir/DetectedIssue/{id}` and `GET /fhir/DetectedIssue?status=&identified=`
+  (a searchset `Bundle`), content-negotiated as real FHIR JSON
+  (`application/fhir+json` or `application/json`), with an honest
+  `CapabilityStatement` at `GET /fhir/metadata`. Every status and severity
+  combination validates with zero errors against the base R4 profile — see
+  [docs/fhir-mapping.md](docs/fhir-mapping.md) for the full field mapping.
 
 ## Quickstart
 
@@ -161,6 +168,15 @@ curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/webhook-sub
 # Delivery attempts, including dead-lettered ones (ANALYST or ADMIN)
 curl -H "Authorization: Bearer $TOKEN" \
   "localhost:8080/api/v1/webhook-deliveries?status=DEAD_LETTERED"
+
+# The same alert, as FHIR — real FHIR JSON, not the REST shape above
+curl -H "Authorization: Bearer $TOKEN" -H "Accept: application/fhir+json" \
+  localhost:8080/fhir/DetectedIssue/62
+curl -H "Authorization: Bearer $TOKEN" \
+  "localhost:8080/fhir/DetectedIssue?status=preliminary&identified=2026-01-05"
+
+# No token needed — a CapabilityStatement is meant to be publicly discoverable
+curl localhost:8080/fhir/metadata
 ```
 
 An illegal move (resolving an alert that was never acknowledged) returns
@@ -169,6 +185,10 @@ An illegal move (resolving an alert that was never acknowledged) returns
 ```json
 {"detail": "Cannot move an alert from OPEN to RESOLVED", "status": 409, "from": "OPEN", "to": "RESOLVED"}
 ```
+
+The FHIR endpoints return an `OperationOutcome`, not the REST API's
+`ProblemDetail`, on error — a FHIR client expects a FHIR resource in every
+response. See [docs/fhir-mapping.md](docs/fhir-mapping.md).
 
 ## Architecture (target)
 
@@ -190,10 +210,10 @@ DHIS2 Web API ──▶ datasource ──▶ observations (PostgreSQL)
                                      │       retry/backoff/dead-letter)
                                      └──▶ email (best-effort)
 
-REST /api/v1/**  (JWT, roles)  ◀── done     FHIR /fhir/DetectedIssue (Phase 6)
+REST /api/v1/**  (JWT, roles)  ◀── done     FHIR /fhir/DetectedIssue (JWT; /metadata public)  ◀── done
 ```
 
-Everything except FHIR output exists so far. Every alert transition
+Everything above exists. Every alert transition
 (`acknowledge`/`resolve`/`dismiss`) is enforced by an explicit state machine
 and writes an append-only `alert_event` in the same transaction as the
 status change; optimistic locking (`@Version`) means a stale concurrent
@@ -269,6 +289,7 @@ src/main/java/.../outbreaksignal
   ├── datasource/    DhisClient/DhisWebClient, Dhis2SyncService, scheduling
   ├── detection/     strategies, DetectionService, alert lifecycle + REST API
   ├── notification/  transactional outbox, webhook dispatch, email, REST API
+  ├── fhir/          DetectedIssue mapping, FHIR JSON, read-only REST API
   ├── security/      OAuth2 resource server, role mapping, OpenAPI
   ├── config/        typed, validated application settings
   └── common/        error model (RFC 9457), EpiWeek
@@ -277,10 +298,9 @@ src/main/resources/db/migration     Flyway migrations
 keycloak/realm-export.json           the optional local Keycloak's realm
 docs/dhis2-spike.md                  findings from the public DHIS2 demo
 docs/keycloak.md                     trying the secured API with a real token
+docs/fhir-mapping.md                 the Alert → DetectedIssue field mapping
 RESULTS.md                           measured backtest numbers
 ```
-
-More packages (`notification`, `fhir`) arrive with their phases.
 
 ## Documentation
 

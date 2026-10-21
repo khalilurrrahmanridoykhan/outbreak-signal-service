@@ -87,3 +87,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persisted retry or dead-letter state, unlike webhooks.
 - A Mailpit service in `docker-compose.yml` for viewing sent mail locally at
   `http://localhost:8025`.
+- Read-only FHIR output: `GET /fhir/DetectedIssue/{id}`,
+  `GET /fhir/DetectedIssue?status=&identified=` (a searchset `Bundle`), and a
+  `GET /fhir/metadata` `CapabilityStatement` listing exactly those two
+  endpoints — no FHIR write operations and no other FHIR resource exist. Real
+  FHIR JSON via a dedicated `HttpMessageConverter` (HAPI FHIR's own parser),
+  content-negotiated as `application/fhir+json` or `application/json`. Every
+  (`AlertStatus` × `Severity`) combination, and four real alerts driven
+  through their full lifecycle against a real PostgreSQL, validate with zero
+  errors against the base R4 profile (`FhirInstanceValidator`). See
+  `docs/fhir-mapping.md` for the full field mapping and the reasoning for
+  `DetectedIssue` over `Flag`.
