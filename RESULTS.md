@@ -91,3 +91,73 @@ reported.
   `surveillance` package) was performed — the plan treats that as optional,
   and R is not a project dependency. The formulas are documented in each
   strategy's own Javadoc instead.
+
+## Phase 7: load test (`GET /api/v1/alerts`, `GET /fhir/DetectedIssue`)
+
+### Dataset
+
+Synthetic, generated directly in PostgreSQL (`loadtest/seed.sql`, not real
+DHIS2 data) at roughly 10x the real public demo's own scale (152 districts,
+~760 series — see `docs/dhis2-spike.md`): **500 org units, 2,500 series,
+250,000 alerts**, spread evenly across the 5 detection algorithms, 4
+statuses and roughly two years of weeks.
+
+### Method
+
+k6 (`loadtest/alerts-search.js`), 10 virtual users, 15 seconds per scenario,
+against the Docker Compose stack (real Postgres, real Keycloak token) on a
+laptop — absolute numbers are indicative of relative cost, not a production
+capacity figure.
+
+### Results
+
+| Scenario | p50 | p90 | p95 | Throughput |
+|---|---|---|---|---|
+| `GET /alerts?orgUnitId=X` (filtered) | 10.7ms | 16.5ms | 19.4ms | 893 req/s |
+| `GET /alerts?status=OPEN` (unfiltered, ~62,500 of 250,000 rows match) | 292.8ms | 370.8ms | 443.5ms | 32 req/s |
+| `GET /fhir/DetectedIssue?status=registered` (same underlying query) | 125.6ms | 150.2ms | 170.5ms | 76.9 req/s |
+
+### What this actually shows — and what it does not
+
+`EXPLAIN ANALYZE` on the unfiltered query found the actual bottleneck: with
+no `series_id` to start from, the planner fell back to a nested loop over
+every series (2,500 of them), 67,526 buffer hits, 36.9ms for the raw SQL
+alone. Two indexes were added (`V6__alert_search_indexes.sql`:
+`ix_alert_status_period`, `ix_alert_algorithm_period`) so a `status`-only or
+`algorithm`-only filter could be satisfied directly on `alert`, without
+touching `series` at all.
+
+**Measured in isolation — `SELECT id FROM alert WHERE status = 'OPEN' ORDER
+BY period_start LIMIT 20` with no other clauses — the new index cuts this
+from 36.9ms to 0.18ms**, a genuine, more-than-200x improvement in the
+underlying access pattern.
+
+**That improvement does not reach the actual HTTP endpoint.** Re-measuring
+`GET /alerts?status=OPEN` with the new indexes dropped versus present
+(k6, same dataset, same method) showed no meaningful difference — p95
+389.6ms before, 443.5ms after, within normal run-to-run noise. The cause:
+`AlertRepository.search`'s `column = COALESCE(:param, column)` pattern
+(`DECISIONS.md` #38) and its unconditional join to `series` (needed only for
+the optional `orgUnitId` filter) together give PostgreSQL's planner nothing
+to prove either condition is a no-op at plan time, so it falls back to
+materialising every status-matching row before sorting and applying the
+`LIMIT`, rather than streaming an ordered index scan with early
+termination. An `EXISTS`-based rewrite of the org-unit condition was tried
+and showed partial improvement (46ms → 29ms for the same raw-SQL shape) but
+not a clean fix, and restructuring every filter this way risks reopening
+the exact parameter-type class of bug `DECISIONS.md` #38 just fixed, for an
+uncertain payoff — not pursued further this phase. The indexes are kept
+regardless: real, harmless, and they do serve the isolated access pattern
+even though this specific query shape does not yet benefit from them end
+to end.
+
+**This matters less in practice than the numbers alone suggest.** The
+unfiltered, no-org-unit case is the pessimistic one; the realistic query
+pattern — an analyst reviewing alerts for their own district,
+`?orgUnitId=X` — is already fast (p95 19.4ms) and is not affected by this
+limitation, because that path already had a usable index
+(`uq_series_org_unit_data_element`) before this phase. A follow-up (not
+built here) would restructure the filtered search as several targeted query
+methods instead of one generic nullable-parameter query, trading the
+current method's simplicity for a plan the optimiser can reason about
+directly.
