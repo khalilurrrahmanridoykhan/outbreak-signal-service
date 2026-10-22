@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
 ### Added
 
 - Spring Boot 4.1 project on Java 25 with Maven.
@@ -98,3 +100,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors against the base R4 profile (`FhirInstanceValidator`). See
   `docs/fhir-mapping.md` for the full field mapping and the reasoning for
   `DetectedIssue` over `Flag`.
+- Micrometer metrics on `/actuator/prometheus` (token-protected, like every
+  other endpoint except `/actuator/health` and `/fhir/metadata`): sync
+  duration and failures, alerts created by algorithm, outbox lag, pending
+  webhook deliveries, and webhook dispatch failures by reason.
+- Structured JSON (ECS-shaped) console logging under the `docker` Spring
+  profile, every line carrying a `correlationId` — one per HTTP request
+  (`CorrelationIdFilter`, also returned as `X-Correlation-Id`) or one per
+  scheduled sync run. Plain console logging stays the default everywhere
+  else; see `docs/runbook.md`.
+- A per-remote-address rate limiter (a plain token bucket, not a new
+  dependency) and a request body size limit, both ahead of authentication in
+  the filter chain; graceful shutdown that lets an in-flight HTTP request or
+  `@Scheduled` batch (a sync, an outbox poll, a webhook dispatch batch)
+  finish before the JVM exits.
+- A layered-JAR, non-root, `HEALTHCHECK`-equipped Dockerfile, smoke-tested in
+  CI; a `release.yml` workflow that pushes a GHCR container image and
+  attaches the JAR and a CycloneDX SBOM to a tagged GitHub Release.
+- Two indexes (`ix_alert_status_period`, `ix_alert_algorithm_period`) found
+  missing by `EXPLAIN ANALYZE` under a 250,000-row synthetic load test — see
+  `RESULTS.md` for the measured before/after, including an honest limit on
+  how much they actually help the compiled query as written.
+- `docs/runbook.md`: what to do when the scheduled sync fails, the outbox
+  backs up, or a webhook dead-letters.
+
+[Unreleased]: https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/releases/tag/v0.1.0

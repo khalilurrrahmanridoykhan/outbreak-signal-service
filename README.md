@@ -3,6 +3,7 @@
 [![CI](https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/actions/workflows/ci.yml/badge.svg)](https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/actions/workflows/codeql.yml/badge.svg)](https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/actions/workflows/codeql.yml)
 [![License](https://img.shields.io/github/license/khalilurrrahmanridoykhan/outbreak-signal-service)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/khalilurrrahmanridoykhan/outbreak-signal-service)](https://github.com/khalilurrrahmanridoykhan/outbreak-signal-service/releases/latest)
 ![Java 25](https://img.shields.io/badge/Java-25-blue)
 ![Spring Boot 4.1](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F)
 
@@ -17,8 +18,7 @@ publishes the resulting alerts as a REST API, signed webhooks, email and FHIR
 
 ## Status
 
-Under active development, built in seven phases. Everything below "Planned"
-is not implemented yet.
+Built in seven phases, all now done — **`v0.1.0`**.
 
 | Phase | Scope | State |
 |---|---|---|
@@ -28,7 +28,7 @@ is not implemented yet.
 | 4 | Alerts API with lifecycle and JWT security | **Done** |
 | 5 | Notifications: signed webhooks and email via a transactional outbox | **Done** |
 | 6 | FHIR output (`DetectedIssue`, read-only) | **Done** |
-| 7 | Observability, packaging, `v0.1.0` release | Planned |
+| 7 | Observability, packaging, `v0.1.0` release | **Done** |
 
 Progress is tracked through the milestones and issues of this repository, and
 user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
@@ -85,6 +85,16 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   `CapabilityStatement` at `GET /fhir/metadata`. Every status and severity
   combination validates with zero errors against the base R4 profile — see
   [docs/fhir-mapping.md](docs/fhir-mapping.md) for the full field mapping.
+- Observability: Micrometer metrics on `/actuator/prometheus` (sync
+  duration/failures, alerts created by algorithm, outbox lag, webhook
+  backlog and dispatch failures), structured JSON console logging with a
+  correlation id per request/sync under the `docker` profile — see
+  [docs/runbook.md](docs/runbook.md).
+- Hardening: a per-address rate limiter and request-size limit ahead of
+  authentication, graceful shutdown that lets an in-flight request or
+  scheduled batch finish, a layered non-root Dockerfile with a real
+  `HEALTHCHECK`, and a `release.yml` that pushes a GHCR image and attaches
+  the JAR and a CycloneDX SBOM to each tagged release.
 
 ## Quickstart
 
@@ -105,6 +115,11 @@ curl http://localhost:8080/actuator/health
 
 Stop it with `Ctrl+C`, and remove the database volume with
 `docker compose down -v`.
+
+A prebuilt image is also published on every tagged release —
+`docker pull ghcr.io/khalilurrrahmanridoykhan/outbreak-signal-service:latest`
+— if you'd rather not build locally; `docker compose up --build` above
+still builds it from source, which is what this quickstart uses.
 
 `docker compose up` also starts [Mailpit](https://mailpit.axllent.net/), a
 local SMTP test server, with every alert event's notification email visible
@@ -242,6 +257,8 @@ change. The reasoning behind each choice is recorded in
 | `outbreak.notification.webhook.max-attempts` | `OUTBREAK_NOTIFICATION_WEBHOOK_MAX_ATTEMPTS` | `5` | Attempts before a delivery is dead-lettered |
 | `outbreak.notification.webhook.initial-backoff-ms` / `.backoff-multiplier` | `OUTBREAK_NOTIFICATION_WEBHOOK_*` | `10000` / `3.0` | The first retry's delay, and how much each later one grows by |
 | `outbreak.notification.email.enabled` / `.to` / `.from` | `OUTBREAK_NOTIFICATION_EMAIL_*` | `false` (`true` in `docker-compose.yml`) / `ops@example.org` / `outbreak-signal@example.org` | Whether to email a fixed recipient on every event |
+| `outbreak.rate-limit.requests-per-minute` / `.burst-capacity` | `OUTBREAK_RATE_LIMIT_*` | `300` / `50` | The token bucket every client address is limited to |
+| `outbreak.request.max-body-bytes` | `OUTBREAK_REQUEST_MAX_BODY_BYTES` | `1048576` (1 MiB) | Requests with a larger declared `Content-Length` are rejected with `413` |
 
 The data elements synced (`outbreak.dhis2.data-elements`) are a list in
 `application.yml`, not single environment variables; override the whole list
@@ -292,14 +309,16 @@ src/main/java/.../outbreaksignal
   ├── fhir/          DetectedIssue mapping, FHIR JSON, read-only REST API
   ├── security/      OAuth2 resource server, role mapping, OpenAPI
   ├── config/        typed, validated application settings
-  └── common/        error model (RFC 9457), EpiWeek
+  └── common/        error model (RFC 9457), EpiWeek, filters, CorrelationIdFilter
 src/test/.../detection/backtest/   the synthetic-outbreak backtest
 src/main/resources/db/migration     Flyway migrations
 keycloak/realm-export.json           the optional local Keycloak's realm
+loadtest/                            k6 script and seed data for RESULTS.md's load test
 docs/dhis2-spike.md                  findings from the public DHIS2 demo
 docs/keycloak.md                     trying the secured API with a real token
 docs/fhir-mapping.md                 the Alert → DetectedIssue field mapping
-RESULTS.md                           measured backtest numbers
+docs/runbook.md                      what to do when something breaks
+RESULTS.md                           measured backtest and load-test numbers
 ```
 
 ## Documentation
@@ -307,9 +326,12 @@ RESULTS.md                           measured backtest numbers
 - [DECISIONS.md](DECISIONS.md): architecture decision records
 - [DATA_DICTIONARY.md](DATA_DICTIONARY.md): tables and columns
 - [DATA_PROVENANCE.md](DATA_PROVENANCE.md): where data comes from
-- [RESULTS.md](RESULTS.md): measured backtest numbers, strategy by strategy
+- [RESULTS.md](RESULTS.md): measured backtest and load-test numbers
 - [ETHICS.md](ETHICS.md): responsible use and limits
+- [docs/dhis2-spike.md](docs/dhis2-spike.md): findings from the public DHIS2 demo
 - [docs/keycloak.md](docs/keycloak.md): trying the secured API with a real token
+- [docs/fhir-mapping.md](docs/fhir-mapping.md): the Alert → DetectedIssue field mapping
+- [docs/runbook.md](docs/runbook.md): what to do when something breaks
 - [docs/repo-setup.md](docs/repo-setup.md): how the repository settings are managed
 
 ## Contributing
