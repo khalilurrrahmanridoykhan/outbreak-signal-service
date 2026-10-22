@@ -19,7 +19,9 @@ public record OutbreakProperties(
         @Valid Dhis2 dhis2,
         @Valid @DefaultValue Detection detection,
         @Valid @DefaultValue Security security,
-        @Valid @DefaultValue Notification notification) {
+        @Valid @DefaultValue Notification notification,
+        @Valid @DefaultValue RateLimit rateLimit,
+        @Valid @DefaultValue Request request) {
 
     /**
      * Settings for pulling data from the source system.
@@ -184,5 +186,28 @@ public record OutbreakProperties(
                 @DefaultValue("ops@example.org") @NotBlank String to,
                 @DefaultValue("outbreak-signal@example.org") @NotBlank String from) {
         }
+    }
+
+    /**
+     * A plain per-client-address token bucket (one bucket per remote
+     * address, refilled continuously), not a dependency like Bucket4j — the
+     * rule this whole settings class already follows.
+     *
+     * @param requestsPerMinute the sustained rate a single client may call at
+     * @param burstCapacity how many requests a client may make in a sudden
+     *     burst before it is throttled to the sustained rate
+     */
+    public record RateLimit(
+            @DefaultValue("300") @Min(1) int requestsPerMinute,
+            @DefaultValue("50") @Min(1) int burstCapacity) {
+    }
+
+    /**
+     * @param maxBodyBytes requests with a larger {@code Content-Length} are
+     *     rejected with {@code 413} before their body is read; a request with
+     *     no {@code Content-Length} (chunked transfer) is not checked by this
+     *     — a known limitation, see {@code RequestSizeLimitFilter}
+     */
+    public record Request(@DefaultValue("1048576") @Min(1024) long maxBodyBytes) {
     }
 }
