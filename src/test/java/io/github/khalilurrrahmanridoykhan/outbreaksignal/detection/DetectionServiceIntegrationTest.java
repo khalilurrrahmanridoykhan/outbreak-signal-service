@@ -10,9 +10,13 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +52,8 @@ class DetectionServiceIntegrationTest {
     private AlertRepository alerts;
     @Autowired
     private OutboxEventRepository outboxEvents;
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     private Series series;
 
@@ -78,6 +84,12 @@ class DetectionServiceIntegrationTest {
 
     @Test
     void everyStrategyRunsAndTheSustainedRiseProducesAlerts() {
+        // The MeterRegistry is a singleton shared with every other test in
+        // this JVM run (Spring's test context caching), so its counters are
+        // cumulative across the whole suite — a baseline read before acting
+        // is what makes a delta assertion meaningful rather than coincidental.
+        Map<String, Double> alertsCreatedBefore = alertsCreatedCountsByAlgorithm();
+
         DetectionSummary summary = detectionService.runDetection();
 
         assertThat(summary.runs()).extracting("algorithm")
@@ -104,6 +116,21 @@ class DetectionServiceIntegrationTest {
         // One outbox row per new alert, written in the same transaction as
         // the alert itself — see AlertEventPublisher.
         assertThat(outboxEvents.count()).isEqualTo(stored.size());
+
+        Map<String, Double> alertsCreatedAfter = alertsCreatedCountsByAlgorithm();
+        double totalIncrease = summary.runs().stream()
+                .mapToDouble(run -> alertsCreatedAfter.get(run.algorithm()) - alertsCreatedBefore.getOrDefault(run.algorithm(), 0.0))
+                .sum();
+        assertThat(totalIncrease).isEqualTo(stored.size());
+    }
+
+    private Map<String, Double> alertsCreatedCountsByAlgorithm() {
+        Map<String, Double> counts = new HashMap<>();
+        for (String algorithm : List.of("MOVING_AVERAGE_Z", "EARS_C1", "EARS_C2", "EARS_C3", "CUSUM")) {
+            Counter counter = meterRegistry.find("outbreak.alerts.created").tag("algorithm", algorithm).counter();
+            counts.put(algorithm, counter == null ? 0.0 : counter.count());
+        }
+        return counts;
     }
 
     @Test

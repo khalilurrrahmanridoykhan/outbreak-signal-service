@@ -19,6 +19,7 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -92,6 +93,8 @@ class WebhookDispatchIntegrationTest {
     private DetectionRunRepository detectionRuns;
     @Autowired
     private AlertRepository alerts;
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     private Long alertId;
 
@@ -174,6 +177,8 @@ class WebhookDispatchIntegrationTest {
         });
 
         assertThat(wireMock.findAll(postRequestedFor(urlPathEqualTo("/hook")))).hasSize(3);
+        assertThat(meterRegistry.get("outbreak.webhook.dispatch.failures").tag("reason", "http-500").counter().count())
+                .isEqualTo(3);
     }
 
     @Test
