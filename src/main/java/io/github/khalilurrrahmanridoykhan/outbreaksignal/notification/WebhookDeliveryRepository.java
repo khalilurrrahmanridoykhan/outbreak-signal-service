@@ -33,4 +33,7 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
     void markSending(@Param("ids") List<Long> ids, @Param("now") Instant now);
 
     Page<WebhookDelivery> findByStatus(WebhookDeliveryStatus status, Pageable pageable);
+
+    /** For the {@code outbreak.webhook.deliveries.pending} gauge. */
+    long countByStatus(WebhookDeliveryStatus status);
 }

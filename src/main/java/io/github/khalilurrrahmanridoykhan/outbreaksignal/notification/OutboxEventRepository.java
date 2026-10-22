@@ -32,4 +32,8 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Query("UPDATE OutboxEvent e SET e.status = io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.OutboxEventStatus.DISPATCHED, e.dispatchedAt = :now WHERE e.id IN :ids")
     void markDispatched(@Param("ids") List<Long> ids, @Param("now") Instant now);
+
+    /** For the {@code outbreak.outbox.lag.seconds} gauge: null when nothing is pending. */
+    @Query("SELECT MIN(e.createdAt) FROM OutboxEvent e WHERE e.status = io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.OutboxEventStatus.PENDING")
+    Instant findOldestPendingCreatedAt();
 }

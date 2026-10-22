@@ -5,6 +5,8 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.config.OutbreakProperti
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPayload;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.notification.AlertEventPublisher;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Observation;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.ObservationRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepository;
@@ -42,6 +44,7 @@ public class DetectionService {
     private final OutbreakProperties properties;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     DetectionService(
             List<DetectionStrategy> strategies,
@@ -52,7 +55,8 @@ public class DetectionService {
             AlertEventPublisher outbox,
             OutbreakProperties properties,
             ObjectMapper objectMapper,
-            Clock clock) {
+            Clock clock,
+            MeterRegistry meterRegistry) {
         this.strategies = strategies;
         this.seriesRepository = seriesRepository;
         this.observationRepository = observationRepository;
@@ -62,6 +66,7 @@ public class DetectionService {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
@@ -101,6 +106,13 @@ public class DetectionService {
         detectionRunRepository.save(run);
         log.info("Detection run finished: algorithm={} seriesEvaluated={} alertsCreated={}",
                 strategy.id(), seriesEvaluated, alertsCreated);
+        if (alertsCreated > 0) {
+            Counter.builder("outbreak.alerts.created")
+                    .tag("algorithm", strategy.id())
+                    .description("New alerts created, by detection algorithm")
+                    .register(meterRegistry)
+                    .increment(alertsCreated);
+        }
         return new DetectionSummary.DetectionRunSummary(strategy.id(), seriesEvaluated, alertsCreated);
     }
 

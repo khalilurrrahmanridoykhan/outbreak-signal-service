@@ -478,3 +478,92 @@ being picked up implicitly — consistent with this project's existing
 "every test declares what it needs" style, rather than introducing this
 project's first Spring Boot auto-configuration just to paper over one
 converter.
+
+## 40. The rate limiter, size limit and correlation-id filters are registered explicitly, not as `@Component`
+
+A plain `@Component`-scanned `Filter` bean is auto-registered by Boot at
+`Ordered.LOWEST_PRECEDENCE`, which runs *after* Spring Security's own
+filter chain (`SecurityFilterProperties.DEFAULT_FILTER_ORDER`, a
+deliberately low — high-precedence — number). That is backwards for a rate
+limiter and a request-size guard, both of which should reject abusive or
+oversized traffic before spending any effort on JWT validation, and for a
+correlation id, which should exist before Security's own `401` log line is
+written. `FilterConfig` registers all three explicitly via
+`FilterRegistrationBean`, each ordered a fixed offset before
+`SecurityFilterProperties.DEFAULT_FILTER_ORDER`, and none of the three
+classes carries `@Component` — avoiding a double registration (once from
+component-scanning, once from the explicit bean) that would otherwise run
+each filter twice per request.
+
+## 41. Structured JSON logging is a Spring profile, not the default
+
+`logging.structured.format.console: ecs` (Boot's own structured-logging
+support, no new dependency) lives in `application-docker.yml`, activated by
+`SPRING_PROFILES_ACTIVE=docker` in `docker-compose.yml` — not in the main
+`application.yml`. Tried as the global default first: every `./mvnw test`
+and `spring-boot:run` console became a wall of one-line JSON, a straight
+regression for reading this project's own test output and Hibernate SQL
+logging, which the existing `CONTRIBUTING.md` workflow already relies on
+being readable. A container's stdout is exactly where machine-parseable
+logs earn their keep (whatever collects them in a real deployment); a
+terminal a person is reading is not.
+
+## 42. Spring Boot 4.1's layered JAR extraction produces a thin jar plus a sibling `lib/`, not an exploded `BOOT-INF`
+
+`java -Djarmode=tools -jar app.jar extract --layers --destination extracted`
+(the Boot 3.2+ "tools" jarmode, replacing the older `layertools`) does not
+produce the classic Boot 2/3 exploded-classes-directory layout this
+project's Dockerfile was originally written to expect. The `application`
+layer is a **thin** jar (this project's own classes only, ~300KB) whose own
+manifest `Class-Path` lists every dependency as `lib/<name>.jar`, relative
+to wherever that thin jar itself is placed; the `dependencies` layer is
+just that `lib/` directory. There is no `JarLauncher` involved and no
+`spring-boot-loader` layer content to copy for this packaging — the thin
+jar is run with a completely ordinary `java -jar`, as long as `lib/` sits
+beside it. The Dockerfile's final stage copies `dependencies/` to `./`
+(landing at `./lib/`) and the one jar from `application/` to a fixed
+`./app.jar`, exactly matching what that manifest `Class-Path` expects.
+
+## 43. A `MeterRegistry` in a `@SpringBootTest` is a singleton shared across every test that reuses the same cached Spring context
+
+Found writing the first metrics-assertion test: `DetectionServiceIntegrationTest`
+has two `@Test` methods, both calling `detectionService.runDetection()`
+against the same cached application context, and JUnit does not guarantee
+declaration order. A counter assertion written as an absolute value
+(`counter.count() == 3`) passed or failed depending on which test method
+happened to run first — the *other* method's own calls had already
+incremented the same counter. The same risk applies to
+`Dhis2SyncServiceIntegrationTest`. Both now capture a baseline count
+*before* acting and assert the *delta* after, which is correct regardless
+of execution order or how many other tests in the same class (or, in
+principle, a future test sharing the identical `@Import` set and so the
+identical cached context) have already touched the same metric.
+
+## 44. Every endpoint's authorization was re-reviewed; no gap found
+
+Phase 7's "review of every endpoint's authorization" (the plan's own
+security-pass item): every `@*Mapping` across every controller was listed
+and its effective requirement checked against intent —
+`POST /api/v1/sync`, `POST /api/v1/detection/run`, and all
+`webhook-subscriptions` CRUD are `ADMIN`-only; alert
+`acknowledge`/`resolve`/`dismiss` and `GET /webhook-deliveries` are
+`ANALYST` or `ADMIN`; every other `/api/v1/**` and `/fhir/DetectedIssue*`
+read is any authenticated role (`SecurityConfig`'s blanket
+`.anyRequest().authenticated()`, with no narrower `@PreAuthorize`); and
+`/actuator/health`, `/fhir/metadata`, `/swagger-ui/**` and `/v3/api-docs/**`
+are the only endpoints open with no token at all, each for the same reason
+(infrastructure/discovery, not alert data). Nothing found needing a change.
+
+## 45. The load test's rate-limit collision, and what it actually proved
+
+The first `k6` run against the seeded load-test dataset failed 99.95% of
+requests — not an application bug, but `RateLimitFilter` (#40, this same
+phase) correctly throttling 20 virtual users firing with no pacing, which
+briefly reached roughly 13,000 req/s from one address, several orders of
+magnitude past any real client. Re-run with
+`OUTBREAK_RATE_LIMIT_REQUESTS_PER_MINUTE`/`_BURST_CAPACITY` raised for that
+one load-test session (never in the committed defaults) gave the real
+numbers in `RESULTS.md`. Kept as a documented load-test prerequisite
+(`loadtest/alerts-search.js`'s own header comment) rather than a surprise,
+since a future load test against this service will hit the exact same
+wall otherwise.

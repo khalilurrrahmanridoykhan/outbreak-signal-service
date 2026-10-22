@@ -95,6 +95,7 @@ class AlertEmailNotifierIntegrationTest {
         OutbreakProperties.Notification notification = new OutbreakProperties.Notification(
                 properties.notification().outbox(), properties.notification().webhook(), email);
         return new OutbreakProperties(
-                properties.sync(), properties.dhis2(), properties.detection(), properties.security(), notification);
+                properties.sync(), properties.dhis2(), properties.detection(), properties.security(), notification,
+                properties.rateLimit(), properties.request());
     }
 }

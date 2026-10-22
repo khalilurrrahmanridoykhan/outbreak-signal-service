@@ -30,6 +30,9 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Structured JSON console logging (application-docker.yml) — a
+      # readable console is what local `./mvnw` runs get instead.
+      SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://db:5432/outbreaksignal
       DB_USERNAME: outbreak
       DB_PASSWORD: outbreak

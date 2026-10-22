@@ -8,6 +8,9 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Series;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -45,6 +48,7 @@ public class Dhis2SyncService {
     private final ObservationRepository observations;
     private final OutbreakProperties properties;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     Dhis2SyncService(
             DhisClient dhisClient,
@@ -52,32 +56,49 @@ public class Dhis2SyncService {
             SeriesRepository series,
             ObservationRepository observations,
             OutbreakProperties properties,
-            Clock clock) {
+            Clock clock,
+            MeterRegistry meterRegistry) {
         this.dhisClient = dhisClient;
         this.orgUnits = orgUnits;
         this.series = series;
         this.observations = observations;
         this.properties = properties;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
     public SyncResult sync() {
-        OutbreakProperties.Dhis2 dhis2 = properties.dhis2();
-        int orgUnitsCreated = syncOrgUnits(dhis2.orgUnitLevel());
+        Timer.Sample timer = Timer.start(meterRegistry);
+        String outcome = "success";
+        try {
+            OutbreakProperties.Dhis2 dhis2 = properties.dhis2();
+            int orgUnitsCreated = syncOrgUnits(dhis2.orgUnitLevel());
 
-        List<EpiWeek> weeks = EpiWeek.containing(LocalDate.now(clock))
-                .lastWeeksEndingHere(properties.sync().windowWeeks());
+            List<EpiWeek> weeks = EpiWeek.containing(LocalDate.now(clock))
+                    .lastWeeksEndingHere(properties.sync().windowWeeks());
 
-        List<SyncResult.DataElementResult> results = new ArrayList<>(dhis2.dataElements().size());
-        for (OutbreakProperties.Dhis2.DataElement dataElement : dhis2.dataElements()) {
-            results.add(syncDataElement(dataElement, dhis2.orgUnitLevel(), weeks));
+            List<SyncResult.DataElementResult> results = new ArrayList<>(dhis2.dataElements().size());
+            for (OutbreakProperties.Dhis2.DataElement dataElement : dhis2.dataElements()) {
+                results.add(syncDataElement(dataElement, dhis2.orgUnitLevel(), weeks));
+            }
+
+            SyncResult result = new SyncResult(orgUnitsCreated, weeks.size(), results);
+            if (results.stream().anyMatch(r -> !r.succeeded())) {
+                outcome = "partial-failure";
+            }
+            log.info("DHIS2 sync finished: {} org unit(s) created, {} week(s) requested per data element, {} data element(s) processed",
+                    result.orgUnitsCreated(), result.weeksRequested(), result.dataElements().size());
+            return result;
+        } catch (RuntimeException e) {
+            outcome = "failure";
+            throw e;
+        } finally {
+            timer.stop(Timer.builder("outbreak.sync.duration")
+                    .tag("outcome", outcome)
+                    .description("How long one DHIS2 sync run took, and whether every data element succeeded")
+                    .register(meterRegistry));
         }
-
-        SyncResult result = new SyncResult(orgUnitsCreated, weeks.size(), results);
-        log.info("DHIS2 sync finished: {} org unit(s) created, {} week(s) requested per data element, {} data element(s) processed",
-                result.orgUnitsCreated(), result.weeksRequested(), result.dataElements().size());
-        return result;
     }
 
     private int syncOrgUnits(int level) {
@@ -116,6 +137,11 @@ public class Dhis2SyncService {
             // retries it, and the sync is idempotent, so partial progress now
             // is strictly better than none.
             log.error("Sync failed for data element {} ({}): {}", dataElement.name(), dataElement.uid(), e.getMessage());
+            Counter.builder("outbreak.sync.failures")
+                    .tag("dataElement", dataElement.uid())
+                    .description("DHIS2 sync failures, by data element")
+                    .register(meterRegistry)
+                    .increment();
             return SyncResult.DataElementResult.failed(dataElement.uid(), dataElement.name(), e.getMessage());
         }
     }

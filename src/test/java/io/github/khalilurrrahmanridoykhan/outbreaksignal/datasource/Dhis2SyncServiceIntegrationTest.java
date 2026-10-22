@@ -12,6 +12,7 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.Observation
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.ObservationRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.SeriesRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.time.Clock;
 import java.time.Instant;
@@ -71,6 +72,8 @@ class Dhis2SyncServiceIntegrationTest {
     private SeriesRepository series;
     @Autowired
     private ObservationRepository observations;
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void stubDhis2AndCleanTheDatabase() {
@@ -96,6 +99,13 @@ class Dhis2SyncServiceIntegrationTest {
 
     @Test
     void runningTheSyncThreeTimesLeavesExactlyOneObservationRow() {
+        // This class's own other test method shares the same cached Spring
+        // context (and so the same MeterRegistry) and also calls sync() —
+        // JUnit does not guarantee method execution order, so a baseline
+        // read before acting is what makes a delta assertion correct
+        // regardless of which test runs first.
+        double before = syncDurationSuccessCount();
+
         SyncResult first = syncService.sync();
         SyncResult second = syncService.sync();
         SyncResult third = syncService.sync();
@@ -116,6 +126,13 @@ class Dhis2SyncServiceIntegrationTest {
 
         wireMock.verify(3, getRequestedFor(urlPathEqualTo("/api/organisationUnits.json")));
         wireMock.verify(3, getRequestedFor(urlPathEqualTo("/api/analytics.json")));
+
+        assertThat(syncDurationSuccessCount() - before).isEqualTo(3);
+    }
+
+    private double syncDurationSuccessCount() {
+        var timer = meterRegistry.find("outbreak.sync.duration").tag("outcome", "success").timer();
+        return timer == null ? 0.0 : timer.count();
     }
 
     @Test
