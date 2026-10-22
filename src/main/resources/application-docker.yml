@@ -1,0 +1,15 @@
+# Activated by docker-compose.yml's SPRING_PROFILES_ACTIVE=docker. Not the
+# default everywhere: a wall of one-line JSON is a straight regression for
+# local `./mvnw test`/`spring-boot:run` console reading (including every
+# other service's own readable Hibernate SQL and test output this project
+# already relies on), but is exactly what a container's stdout should be —
+# machine-parseable for whatever collects it in a real deployment.
+#
+# ECS-shaped JSON; every log line carries whatever is in MDC at the time —
+# CorrelationIdFilter's "correlationId" for every HTTP request, and
+# Dhis2SyncScheduler's own for every scheduled sync — so a single field
+# groups every line from one request or one sync run.
+logging:
+  structured:
+    format:
+      console: ecs

@@ -1,6 +1,20 @@
+server:
+  # Finishes in-flight HTTP requests before shutting down, instead of
+  # cutting them off; paired with spring.task.scheduling's own
+  # await-termination below so a mid-batch outbox poller gets the same
+  # treatment, not just the web server.
+  shutdown: graceful
+
 spring:
   application:
     name: outbreak-signal-service
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  task:
+    scheduling:
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
   datasource:
     # Defaults match docker-compose.yml and are for local development only.
     url: ${DB_URL:jdbc:postgresql://localhost:5432/outbreaksignal}
@@ -89,13 +103,22 @@ outbreak:
       enabled: ${OUTBREAK_NOTIFICATION_EMAIL_ENABLED:false}
       to: ${OUTBREAK_NOTIFICATION_EMAIL_TO:ops@example.org}
       from: ${OUTBREAK_NOTIFICATION_EMAIL_FROM:outbreak-signal@example.org}
+  rate-limit:
+    requests-per-minute: ${OUTBREAK_RATE_LIMIT_REQUESTS_PER_MINUTE:300}
+    burst-capacity: ${OUTBREAK_RATE_LIMIT_BURST_CAPACITY:50}
+  request:
+    max-body-bytes: ${OUTBREAK_REQUEST_MAX_BODY_BYTES:1048576}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
+        enabled: true
+  prometheus:
+    metrics:
+      export:
         enabled: true

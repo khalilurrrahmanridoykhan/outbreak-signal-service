@@ -1,9 +1,12 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.datasource;
 
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.common.CorrelationIdFilter;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.detection.DetectionService;
+import java.util.UUID;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -31,9 +34,14 @@ class Dhis2SyncScheduler {
     @Scheduled(cron = "${outbreak.sync.cron}")
     @SchedulerLock(name = "dhis2-sync", lockAtLeastFor = "PT1M", lockAtMostFor = "PT30M")
     void scheduledSync() {
-        log.info("Starting scheduled DHIS2 sync");
-        syncService.sync();
-        log.info("Starting detection after sync");
-        detectionService.runDetection();
+        MDC.put(CorrelationIdFilter.MDC_KEY, UUID.randomUUID().toString());
+        try {
+            log.info("Starting scheduled DHIS2 sync");
+            syncService.sync();
+            log.info("Starting detection after sync");
+            detectionService.runDetection();
+        } finally {
+            MDC.remove(CorrelationIdFilter.MDC_KEY);
+        }
     }
 }

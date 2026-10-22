@@ -1,5 +1,7 @@
 package io.github.khalilurrrahmanridoykhan.outbreaksignal.notification;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -31,12 +33,15 @@ class WebhookDispatchScheduler {
     private final WebClient webhookHttpClient;
     private final WebhookSigner signer;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
-    WebhookDispatchScheduler(WebhookDispatchService dispatchService, WebClient webhookHttpClient, WebhookSigner signer, Clock clock) {
+    WebhookDispatchScheduler(WebhookDispatchService dispatchService, WebClient webhookHttpClient, WebhookSigner signer,
+            Clock clock, MeterRegistry meterRegistry) {
         this.dispatchService = dispatchService;
         this.webhookHttpClient = webhookHttpClient;
         this.signer = signer;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
 
     @Scheduled(fixedDelayString = "${outbreak.notification.webhook.poll-interval-ms}")
@@ -78,9 +83,19 @@ class WebhookDispatchScheduler {
         } catch (WebClientResponseException e) {
             log.warn("Webhook delivery {} to {} failed with {}", job.deliveryId(), job.url(), e.getStatusCode());
             dispatchService.markFailed(job.deliveryId(), "HTTP " + e.getStatusCode());
+            recordFailure("http-" + e.getStatusCode().value());
         } catch (WebClientRequestException e) {
             log.warn("Webhook delivery {} to {} could not connect: {}", job.deliveryId(), job.url(), e.getMessage());
             dispatchService.markFailed(job.deliveryId(), e.getMessage());
+            recordFailure("connection-error");
         }
+    }
+
+    private void recordFailure(String reason) {
+        Counter.builder("outbreak.webhook.dispatch.failures")
+                .tag("reason", reason)
+                .description("Webhook delivery attempts that failed, by reason")
+                .register(meterRegistry)
+                .increment();
     }
 }
