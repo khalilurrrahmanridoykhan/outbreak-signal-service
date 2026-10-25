@@ -18,7 +18,7 @@ class DetectedIssueMapperTest {
 
     private static AlertSummary sampleAlert(AlertStatus status) {
         return new AlertSummary(
-                62L, 7L, "Kpanga Kabonde", "IDSR Malaria", "EARS_C3",
+                62L, 100L, 7L, "Kpanga Kabonde", "IDSR Malaria", "EARS_C3",
                 LocalDate.of(2026, 1, 5), new BigDecimal("9.50"), new BigDecimal("3.00"),
                 Severity.HIGH, status, 0L, Instant.parse("2026-01-12T03:00:00Z"));
     }

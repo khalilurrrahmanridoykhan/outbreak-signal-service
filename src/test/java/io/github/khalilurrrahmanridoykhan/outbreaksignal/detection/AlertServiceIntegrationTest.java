@@ -176,7 +176,7 @@ class AlertServiceIntegrationTest {
      */
     @Test
     void searchAndDetailResolveTheLazyOrgUnitAndSeriesNamesWithoutError() {
-        AlertSummary fromSearch = alertService.search(null, null, null, null, null, Pageable.unpaged())
+        AlertSummary fromSearch = alertService.search(null, null, null, null, null, null, null, Pageable.unpaged())
                 .getContent().getFirst();
         assertThat(fromSearch.orgUnitName()).isEqualTo("Kpanga Kabonde");
         assertThat(fromSearch.dataElementName()).isEqualTo("IDSR Malaria");
@@ -184,5 +184,33 @@ class AlertServiceIntegrationTest {
         AlertSummary fromDetail = alertService.getDetail(openAlert.getId()).alert();
         assertThat(fromDetail.orgUnitName()).isEqualTo("Kpanga Kabonde");
         assertThat(fromDetail.dataElementName()).isEqualTo("IDSR Malaria");
+    }
+
+    @Test
+    void searchFiltersByDataElementNameAndSeverityIndependently() {
+        Series choleraSeries = seriesRepository.save(new Series(openAlert.getSeries().getOrgUnit(), "UsSUX0cpKsH", "IDSR Cholera"));
+        DetectionRun run = detectionRuns.save(new DetectionRun("CUSUM", "{}", 104, Instant.now()));
+        run.finish(Instant.now(), 1, 1);
+        detectionRuns.save(run);
+        Alert lowCholeraAlert = alerts.save(new Alert(choleraSeries, MONDAY.plusWeeks(1), "CUSUM",
+                new BigDecimal("3.5"), new BigDecimal("3.0"), Severity.LOW, run, Instant.now()));
+
+        // openAlert itself is IDSR Malaria / HIGH (see seedAnOpenAlert) -- the
+        // contrast with this new IDSR Cholera / LOW alert is what proves each
+        // filter is independent of the other, not just "whatever's HIGH".
+        assertThat(alertService.search(null, null, null, "IDSR Cholera", null, null, null, Pageable.unpaged())
+                .getContent())
+                .extracting(AlertSummary::id)
+                .containsExactly(lowCholeraAlert.getId());
+
+        assertThat(alertService.search(null, null, null, null, Severity.LOW, null, null, Pageable.unpaged())
+                .getContent())
+                .extracting(AlertSummary::id)
+                .containsExactly(lowCholeraAlert.getId());
+
+        assertThat(alertService.search(null, null, null, null, Severity.HIGH, null, null, Pageable.unpaged())
+                .getContent())
+                .extracting(AlertSummary::id)
+                .containsExactly(openAlert.getId());
     }
 }

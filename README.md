@@ -57,8 +57,10 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   [RESULTS.md](RESULTS.md) for how they actually perform against a synthetic
   outbreak, measured, including where one of them (CUSUM) looks worse on a
   naive metric than it really is.
-- A REST API over `/api/v1`: paginated, filterable `GET /alerts`, an alert's
-  full reviewed history at `GET /alerts/{id}`, and
+- A REST API over `/api/v1`: paginated, filterable (status, org unit,
+  algorithm, data element, severity, period range -- independently or
+  combined) `GET /alerts`, an alert's full reviewed history at
+  `GET /alerts/{id}`, and
   `acknowledge`/`resolve`/`dismiss` enforcing an explicit state machine
   (`409` on an illegal move) with optimistic locking (`409` on a stale
   concurrent review) — plus read-only `GET /series` and
@@ -157,9 +159,10 @@ Every call below needs `Authorization: Bearer $TOKEN` — see
 `http://localhost:8080/swagger-ui/index.html`.
 
 ```bash
-# Paginated, filterable
+# Paginated, filterable by status, orgUnitId, algorithm, dataElement,
+# severity, and a from/to period range -- any combination, all optional
 curl -H "Authorization: Bearer $TOKEN" \
-  "localhost:8080/api/v1/alerts?status=OPEN&algorithm=EARS_C3&page=0&size=20"
+  "localhost:8080/api/v1/alerts?status=OPEN&algorithm=EARS_C3&severity=HIGH&page=0&size=20"
 
 # One alert, with its full reviewed history
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/alerts/62

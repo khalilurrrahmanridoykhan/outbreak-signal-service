@@ -53,7 +53,7 @@ class FhirValidationTest {
         for (AlertStatus status : AlertStatus.values()) {
             for (Severity severity : Severity.values()) {
                 AlertSummary alert = new AlertSummary(
-                        id++, 7L, "Kpanga Kabonde", "IDSR Malaria", "EARS_C3",
+                        id++, 100L, 7L, "Kpanga Kabonde", "IDSR Malaria", "EARS_C3",
                         LocalDate.of(2026, 1, 5), new BigDecimal("9.50"), new BigDecimal("3.00"),
                         severity, status, 0L, Instant.parse("2026-01-12T03:00:00Z"));
                 DetectedIssue issue = mapper.map(alert);

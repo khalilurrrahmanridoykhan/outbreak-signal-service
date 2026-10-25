@@ -9,6 +9,7 @@ import java.time.LocalDate;
 /** What {@code GET /alerts} and the write endpoints return — an {@link Alert}, flattened for JSON. */
 public record AlertSummary(
         Long id,
+        Long seriesId,
         Long orgUnitId,
         String orgUnitName,
         String dataElementName,
@@ -26,6 +27,7 @@ public record AlertSummary(
         OrgUnit orgUnit = series.getOrgUnit();
         return new AlertSummary(
                 alert.getId(),
+                series.getId(),
                 orgUnit.getId(),
                 orgUnit.getName(),
                 series.getName(),
