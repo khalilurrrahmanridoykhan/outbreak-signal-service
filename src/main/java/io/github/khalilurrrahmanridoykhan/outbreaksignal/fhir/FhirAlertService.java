@@ -54,7 +54,7 @@ class FhirAlertService {
             return bundle;
         }
 
-        Page<AlertSummary> page = alertService.search(mappedStatus.orElse(null), null, null, identified, identified, pageable);
+        Page<AlertSummary> page = alertService.search(mappedStatus.orElse(null), null, null, null, null, identified, identified, pageable);
         bundle.setTotal((int) page.getTotalElements());
         for (AlertSummary alert : page.getContent()) {
             bundle.addEntry().setResource(mapper.map(alert));

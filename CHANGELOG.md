@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/v1/alerts` now also filters by `dataElement` (matches the
+  series' data element name) and `severity`, independently of the existing
+  `status`, `orgUnitId`, `algorithm` and period-range filters.
+- `AlertSummary` now includes `seriesId`, so a client can look up a series'
+  own observation history (`GET /api/v1/series/{id}/observations`) directly
+  from an alert without a separate lookup.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

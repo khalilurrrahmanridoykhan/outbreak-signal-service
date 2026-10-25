@@ -61,7 +61,7 @@ class AlertControllerTest {
 
     @Test
     void aViewerCanListAlerts() throws Exception {
-        when(alertService.search(any(), any(), any(), any(), any(), any())).thenReturn(Page.empty());
+        when(alertService.search(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(Page.empty());
 
         mvc.perform(get("/api/v1/alerts").with(jwt().authorities(authority("VIEWER"))))
                 .andExpect(status().isOk());

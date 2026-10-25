@@ -33,10 +33,12 @@ class AlertController {
             @RequestParam(required = false) AlertStatus status,
             @RequestParam(required = false) Long orgUnitId,
             @RequestParam(required = false) String algorithm,
+            @RequestParam(required = false) String dataElement,
+            @RequestParam(required = false) Severity severity,
             @RequestParam(required = false) @DateTimeFormat(iso = DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DATE) LocalDate to,
             @PageableDefault(size = 20, sort = "periodStart") Pageable pageable) {
-        return alertService.search(status, orgUnitId, algorithm, from, to, pageable);
+        return alertService.search(status, orgUnitId, algorithm, dataElement, severity, from, to, pageable);
     }
 
     @GetMapping("/{id}")

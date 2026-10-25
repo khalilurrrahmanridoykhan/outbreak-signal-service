@@ -43,8 +43,10 @@ public class AlertService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AlertSummary> search(AlertStatus status, Long orgUnitId, String algorithm, LocalDate from, LocalDate to, Pageable pageable) {
-        return alerts.search(status, orgUnitId, algorithm, from, to, pageable).map(AlertSummary::from);
+    public Page<AlertSummary> search(
+            AlertStatus status, Long orgUnitId, String algorithm, String dataElementName, Severity severity,
+            LocalDate from, LocalDate to, Pageable pageable) {
+        return alerts.search(status, orgUnitId, algorithm, dataElementName, severity, from, to, pageable).map(AlertSummary::from);
     }
 
     @Transactional(readOnly = true)

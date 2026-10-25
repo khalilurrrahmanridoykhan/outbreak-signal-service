@@ -35,6 +35,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
             WHERE a.status = COALESCE(:status, a.status)
               AND a.series.orgUnit.id = COALESCE(:orgUnitId, a.series.orgUnit.id)
               AND a.algorithm = COALESCE(:algorithm, a.algorithm)
+              AND a.series.name = COALESCE(:dataElementName, a.series.name)
+              AND a.severity = COALESCE(:severity, a.severity)
               AND a.periodStart >= COALESCE(:from, a.periodStart)
               AND a.periodStart <= COALESCE(:to, a.periodStart)
             """)
@@ -42,6 +44,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
             @Param("status") AlertStatus status,
             @Param("orgUnitId") Long orgUnitId,
             @Param("algorithm") String algorithm,
+            @Param("dataElementName") String dataElementName,
+            @Param("severity") Severity severity,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to,
             Pageable pageable);
