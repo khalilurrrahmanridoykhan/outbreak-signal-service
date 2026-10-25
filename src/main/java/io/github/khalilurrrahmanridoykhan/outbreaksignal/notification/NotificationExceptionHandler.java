@@ -24,4 +24,11 @@ class NotificationExceptionHandler {
         problem.setTitle("Not Found");
         return problem;
     }
+
+    @ExceptionHandler(NotificationRecipientNotFoundException.class)
+    ProblemDetail handleNotFound(NotificationRecipientNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setTitle("Not Found");
+        return problem;
+    }
 }

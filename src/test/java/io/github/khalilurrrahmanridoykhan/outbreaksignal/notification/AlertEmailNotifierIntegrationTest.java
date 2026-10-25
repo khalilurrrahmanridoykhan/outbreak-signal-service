@@ -12,10 +12,13 @@ import io.github.khalilurrrahmanridoykhan.outbreaksignal.TestcontainersConfigura
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.config.OutbreakProperties;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.detection.AlertStatus;
 import io.github.khalilurrrahmanridoykhan.outbreaksignal.detection.Severity;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnit;
+import io.github.khalilurrrahmanridoykhan.outbreaksignal.observation.OrgUnitRepository;
 import jakarta.mail.internet.MimeMessage;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +58,16 @@ class AlertEmailNotifierIntegrationTest {
     private OutbreakProperties properties;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private NotificationRecipientRepository recipients;
+    @Autowired
+    private OrgUnitRepository orgUnits;
+
+    @AfterEach
+    void cleanUp() {
+        recipients.deleteAll();
+        orgUnits.deleteAll();
+    }
 
     @Test
     void sendsAPlainTextEmailDescribingTheAlert() throws Exception {
@@ -77,14 +90,37 @@ class AlertEmailNotifierIntegrationTest {
         OutboxEvent event = new OutboxEvent(1L, AlertStatus.DISMISSED, toJson(
                 AlertStatus.DISMISSED, "false alarm", "analyst@example.org"), Instant.now());
 
-        new AlertEmailNotifier(neverCalled, disabled, objectMapper).notifyIfEnabled(event);
+        new AlertEmailNotifier(neverCalled, disabled, objectMapper, recipients).notifyIfEnabled(event);
 
         verifyNoInteractions(neverCalled);
     }
 
+    @Test
+    void anOrgUnitSpecificRecipientGetsTheEmailAlongsideTheFixedOpsAddress() throws Exception {
+        OrgUnit orgUnit = orgUnits.save(new OrgUnit("QwMiPiME3bA", "Kpanga Kabonde", 3, null));
+        recipients.save(new NotificationRecipient(orgUnit.getId(), "district.officer@example.org", Instant.now()));
+        OutboxEvent event = new OutboxEvent(1L, AlertStatus.ACKNOWLEDGED, toJson(
+                AlertStatus.ACKNOWLEDGED, null, "analyst@example.org", orgUnit.getId()), Instant.now());
+
+        notifier.notifyIfEnabled(event);
+
+        MimeMessage[] received = greenMail.getReceivedMessages();
+        // GreenMail records one entry per envelope recipient (SMTP RCPT TO),
+        // but each entry is a full copy of the same message, so every
+        // entry's own "To" header already lists both addresses -- hence two
+        // entries, each with both recipients, not one each.
+        assertThat(received).hasSize(2);
+        assertThat(received[0].getAllRecipients()).extracting(Object::toString)
+                .containsExactlyInAnyOrder("ops@example.org", "district.officer@example.org");
+    }
+
     private String toJson(AlertStatus status, String note, String actor) {
+        return toJson(status, note, actor, 2L);
+    }
+
+    private String toJson(AlertStatus status, String note, String actor, Long orgUnitId) {
         AlertEventPayload payload = new AlertEventPayload(
-                1L, 2L, "Kpanga Kabonde", "IDSR Malaria", "EARS_C1", LocalDate.of(2026, 1, 5),
+                1L, orgUnitId, "Kpanga Kabonde", "IDSR Malaria", "EARS_C1", LocalDate.of(2026, 1, 5),
                 new BigDecimal("9.5"), new BigDecimal("3.0"), Severity.HIGH, status, note, actor);
         return objectMapper.writeValueAsString(payload);
     }

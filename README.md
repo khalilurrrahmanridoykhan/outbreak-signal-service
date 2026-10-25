@@ -79,7 +79,12 @@ user-visible changes are listed in [CHANGELOG.md](CHANGELOG.md).
   is at-least-once with retry/backoff and a `DEAD_LETTERED` status after the
   configured attempt limit, visible through the API —
   `webhook_subscription` CRUD at `/api/v1/webhook-subscriptions` (admin-only)
-  and delivery visibility at `/api/v1/webhook-deliveries`.
+  and delivery visibility at `/api/v1/webhook-deliveries`. Email goes to the
+  fixed `outbreak.notification.email.to` address, plus every org-unit-scoped
+  `notification_recipient` registered for that alert's own org unit
+  (`/api/v1/notification-recipients` CRUD, admin-only) — additive, so a
+  general ops address keeps seeing everything while a district officer can
+  be registered to see only their own area.
 - Read-only FHIR output: every alert maps to a `DetectedIssue` at
   `GET /fhir/DetectedIssue/{id}` and `GET /fhir/DetectedIssue?status=&identified=`
   (a searchset `Bundle`), content-negotiated as real FHIR JSON
@@ -182,6 +187,12 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/series/1/observatio
 curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/webhook-subscriptions \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.org/hooks/outbreak-signal"}'
+
+# Register someone for every alert raised against one org unit (ADMIN only)
+curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8080/api/v1/notification-recipients \
+  -H "Content-Type: application/json" \
+  -d '{"orgUnitId": 81, "email": "district.officer@example.org"}'
+curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/v1/notification-recipients?orgUnitId=81"
 
 # Delivery attempts, including dead-lettered ones (ANALYST or ADMIN)
 curl -H "Authorization: Bearer $TOKEN" \
